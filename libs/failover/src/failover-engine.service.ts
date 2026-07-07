@@ -15,7 +15,7 @@ import {
   Template,
   AdvanceOn,
 } from '@message-hub/domain';
-import { ChannelAdapterRegistry, ParsedWebhookEvent, SendResult } from '@message-hub/adapters';
+import { ChannelAdapter, ChannelAdapterRegistry, ParsedWebhookEvent, SendResult } from '@message-hub/adapters';
 import { EncryptionService, RealtimeEventsPublisher, TemplateRenderer } from '@message-hub/shared';
 import { AttemptJobData, QUEUE_ATTEMPT, QUEUE_TIMEOUT_CHECK, TimeoutCheckJobData } from './queue-names';
 import { DEFAULT_TIMEOUT_SECONDS } from './default-timeouts';
@@ -112,6 +112,7 @@ export class FailoverEngineService {
     const adapter = this.registry.get(strategy.strategyKey);
     const channelConfig = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
     const strategyConfig = strategy.configEncrypted ? this.encryption.decrypt(strategy.configEncrypted) : {};
+    await this.refreshChannelCredentialsIfNeeded(adapter, channel, channelConfig);
     const renderedBody = this.renderer.render(template.body, request.templateVariables);
 
     let result: SendResult;
@@ -134,6 +135,34 @@ export class FailoverEngineService {
     }
 
     await this.handleSendResult(attempt.id, step, strategy.id, channel.channelType, result);
+  }
+
+  /**
+   * Providers like Zalo OA expire access tokens (~25h) — refresh here, right
+   * before send(), so a routine background send never fails on an expired
+   * token. Mutates channelConfig in place (the caller passes it straight
+   * into adapter.send() next) and persists the refreshed token back onto the
+   * channel so the next send reuses it instead of refreshing again (Zalo
+   * rotates the refresh token itself on every use, so skipping the persist
+   * would break the *next* refresh, not just waste an API call).
+   */
+  private async refreshChannelCredentialsIfNeeded(
+    adapter: ChannelAdapter,
+    channel: Channel,
+    channelConfig: Record<string, unknown>,
+  ): Promise<void> {
+    if (!adapter.refreshCredentials) return;
+    try {
+      const refreshed = await adapter.refreshCredentials(channelConfig);
+      if (!refreshed) return;
+      Object.assign(channelConfig, refreshed);
+      await this.channels.update(channel.id, { configEncrypted: this.encryption.encrypt(channelConfig) });
+    } catch (err) {
+      this.logger.warn(`Credential refresh failed for channel ${channel.id}: ${(err as Error).message}`);
+      // Fall through with the existing (possibly stale) config — send() will
+      // surface a normal provider_error if the token really is invalid,
+      // which the failover chain already knows how to handle.
+    }
   }
 
   private async handleSendResult(

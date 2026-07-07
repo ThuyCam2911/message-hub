@@ -74,6 +74,17 @@ export interface ChannelAdapter {
   getConfigSchema(): AdapterConfigSchema;
 
   /**
+   * Optional: providers whose access tokens expire (e.g. Zalo OA) can refresh
+   * them here. Called by the FailoverEngine right before send() with the
+   * current decrypted channelConfig; a non-null return means "here's what
+   * changed" and the caller persists it back onto the channel so the next
+   * send doesn't need to refresh again. Returning null means no refresh was
+   * needed (or the adapter has no refresh token configured) — the caller
+   * just uses channelConfig as-is.
+   */
+  refreshCredentials?(channelConfig: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+
+  /**
    * Optional: providers with a server-side template registry (e.g. Zalo ZNS
    * pre-approved templates) can expose it so the Templates UI lets users pick
    * a real templateId instead of typing one by hand.

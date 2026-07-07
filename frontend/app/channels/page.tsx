@@ -176,6 +176,7 @@ export default function ChannelsPage() {
   const [provider, setProvider] = useState('');
   const [configValues, setConfigValues] = useState<ConfigValues>({});
   const [showTestChannels, setShowTestChannels] = useState(false);
+  const [providerTemplateKey, setProviderTemplateKey] = useState('');
 
   const [strategyKeyByChannel, setStrategyKeyByChannel] = useState<Record<string, string>>({});
   const [strategyConfigValuesByChannel, setStrategyConfigValuesByChannel] = useState<Record<string, ConfigValues>>({});
@@ -205,7 +206,13 @@ export default function ChannelsPage() {
     load();
   }, []);
 
-  const channelTypeSchema = mergeSchemasForChannelType(channelType, adapters);
+  // When a channelType has more than one adapter (e.g. sms_http vs
+  // sms_vietguys), merging their schemas would mix unrelated providers'
+  // fields into one confusing form — let the user pick which provider
+  // template to use instead, and show only that adapter's fields.
+  const matchingAdapters = adapters.filter((a) => a.channelType === channelType);
+  const selectedTemplateAdapter = matchingAdapters.find((a) => a.strategyKey === providerTemplateKey) ?? matchingAdapters[0];
+  const channelTypeSchema = selectedTemplateAdapter?.configSchema ?? mergeSchemasForChannelType(channelType, adapters);
   const visibleChannels = showTestChannels
     ? channels
     : channels.filter((c) => c.channelType !== 'mock' && c.isActive);
@@ -366,6 +373,7 @@ export default function ChannelsPage() {
                   value={channelType}
                   onChange={(e) => {
                     setChannelType(e.target.value);
+                    setProviderTemplateKey('');
                     setConfigValues({});
                   }}
                 >
@@ -376,6 +384,24 @@ export default function ChannelsPage() {
                   ))}
                 </select>
               </label>
+              {matchingAdapters.length > 1 && (
+                <label>
+                  Provider template
+                  <select
+                    value={selectedTemplateAdapter?.strategyKey ?? ''}
+                    onChange={(e) => {
+                      setProviderTemplateKey(e.target.value);
+                      setConfigValues({});
+                    }}
+                  >
+                    {matchingAdapters.map((a) => (
+                      <option key={a.strategyKey} value={a.strategyKey}>
+                        {a.strategyKey}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Name
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Zalo OA - Marketing" required />

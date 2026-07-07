@@ -8,10 +8,9 @@ import {
   SendInput,
   SendResult,
 } from '../channel-adapter.interface';
+import { refreshZaloAccessTokenIfNeeded, ZaloOaTokenConfig } from './zalo-token-refresh';
 
-interface ZaloOaChannelConfig {
-  accessToken: string;
-}
+type ZaloOaChannelConfig = ZaloOaTokenConfig;
 
 /**
  * Sends via Zalo Official Account conversational messaging (v3.0 OA message
@@ -89,11 +88,24 @@ export class ZbsUidAdapter implements ChannelAdapter {
     }
   }
 
+  /** Refreshes the OA access token via Zalo's OAuth v4 flow — called by the FailoverEngine right before send(). */
+  async refreshCredentials(channelConfig: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    return refreshZaloAccessTokenIfNeeded(channelConfig as unknown as ZaloOaChannelConfig);
+  }
+
   getConfigSchema(): AdapterConfigSchema {
     return {
       type: 'object',
       properties: {
         accessToken: { type: 'string', title: 'Zalo OA Access Token', secret: true },
+        refreshToken: {
+          type: 'string',
+          title: 'Refresh Token',
+          secret: true,
+          description: 'Điền cùng App ID + Secret Key để hệ thống tự động làm mới Access Token khi hết hạn (~25h).',
+        },
+        appId: { type: 'string', title: 'App ID' },
+        secretKey: { type: 'string', title: 'Secret Key', secret: true },
       },
       required: ['accessToken'],
     };

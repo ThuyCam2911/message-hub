@@ -23,4 +23,22 @@ export class WebhooksController {
     });
     return { received: true, matched };
   }
+
+  /**
+   * VietGuys SMS delivery reports. Configure this URL (https://<host>/webhooks/vietguys)
+   * with VietGuys support once the channel is live — no signature scheme is
+   * documented for this callback, so like mock it's treated as unauthenticated.
+   */
+  @Post('vietguys')
+  async handleVietguys(@Body() body: unknown, @Headers() headers: Record<string, string>) {
+    const { matched } = await this.processing.process({
+      channelType: ChannelType.SMS,
+      strategyKey: 'sms_vietguys',
+      rawPayload: body,
+      headers,
+      channelConfig: {},
+      signatureValid: true,
+    });
+    return { received: true, matched };
+  }
 }

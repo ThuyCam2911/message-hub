@@ -167,6 +167,17 @@ export class ChannelsService {
       throw new BadRequestException('Channel chưa có access token — hãy cấu hình channel trước khi sync template');
     }
     const config = this.encryption.decrypt(channel.configEncrypted);
+    if (adapter.refreshCredentials) {
+      try {
+        const refreshed = await adapter.refreshCredentials(config);
+        if (refreshed) {
+          Object.assign(config, refreshed);
+          await this.channels.update(channelId, { configEncrypted: this.encryption.encrypt(config) });
+        }
+      } catch (err) {
+        // Non-fatal — fall through with the existing token and let the actual sync call below surface the real error.
+      }
+    }
     try {
       return await adapter.listTemplates(config);
     } catch (err) {

@@ -5,6 +5,7 @@ import { CHANNEL_ADAPTERS } from './tokens';
 import { MockAdapter } from './mock/mock.adapter';
 import { EmailSmtpAdapter } from './email/email-smtp.adapter';
 import { SmsHttpAdapter } from './sms/sms-http.adapter';
+import { VietguysSmsAdapter } from './sms/vietguys-sms.adapter';
 import { ZbsUidAdapter } from './zbs/zbs-uid.adapter';
 import { ZbsPhoneAdapter } from './zbs/zbs-phone.adapter';
 import { TelegramAdapter } from './telegram/telegram.adapter';
@@ -15,6 +16,7 @@ const ADAPTER_PROVIDERS = [
   MockAdapter,
   EmailSmtpAdapter,
   SmsHttpAdapter,
+  VietguysSmsAdapter,
   ZbsUidAdapter,
   ZbsPhoneAdapter,
   TelegramAdapter,

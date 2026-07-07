@@ -8,10 +8,9 @@ import {
   SendInput,
   SendResult,
 } from '../channel-adapter.interface';
+import { refreshZaloAccessTokenIfNeeded, ZaloOaTokenConfig } from './zalo-token-refresh';
 
-interface ZnsChannelConfig {
-  accessToken: string;
-}
+type ZnsChannelConfig = ZaloOaTokenConfig;
 
 /**
  * Sends via Zalo Notification Service (ZNS) using a phone number. ZNS is
@@ -121,11 +120,24 @@ export class ZbsPhoneAdapter implements ChannelAdapter {
     }));
   }
 
+  /** Refreshes the ZNS access token via Zalo's OAuth v4 flow — called by the FailoverEngine right before send(). */
+  async refreshCredentials(channelConfig: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    return refreshZaloAccessTokenIfNeeded(channelConfig as unknown as ZnsChannelConfig);
+  }
+
   getConfigSchema(): AdapterConfigSchema {
     return {
       type: 'object',
       properties: {
         accessToken: { type: 'string', title: 'ZNS Access Token', secret: true },
+        refreshToken: {
+          type: 'string',
+          title: 'Refresh Token',
+          secret: true,
+          description: 'Điền cùng App ID + Secret Key để hệ thống tự động làm mới Access Token khi hết hạn (~25h).',
+        },
+        appId: { type: 'string', title: 'App ID' },
+        secretKey: { type: 'string', title: 'Secret Key', secret: true },
       },
       required: ['accessToken'],
     };
