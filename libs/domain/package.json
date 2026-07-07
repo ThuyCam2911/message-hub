@@ -1,0 +1,14 @@
+{
+  "name": "@message-hub/domain",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "typeorm": "^0.3.20",
+    "reflect-metadata": "^0.2.2"
+  }
+}

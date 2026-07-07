@@ -1,0 +1,303 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { Repository } from 'typeorm';
+import {
+  Channel,
+  ChannelStrategy,
+  ContactIdentifier,
+  FailoverPolicyStep,
+  MessageAttempt,
+  MessageAttemptStatus,
+  MessageRequest,
+  MessageRequestStatus,
+  Template,
+  AdvanceOn,
+} from '@message-hub/domain';
+import { ChannelAdapterRegistry, ParsedWebhookEvent, SendResult } from '@message-hub/adapters';
+import { EncryptionService, TemplateRenderer } from '@message-hub/shared';
+import { AttemptJobData, QUEUE_ATTEMPT, QUEUE_TIMEOUT_CHECK, TimeoutCheckJobData } from './queue-names';
+import { DEFAULT_TIMEOUT_SECONDS } from './default-timeouts';
+
+/**
+ * The failover state machine. Every mutation that decides whether to
+ * advance/complete a MessageRequest goes through `advanceOrComplete`, which
+ * uses a compare-and-swap UPDATE on (status, current_step_order) so a
+ * late-arriving webhook racing against a timeout job can only advance the
+ * request once.
+ */
+@Injectable()
+export class FailoverEngineService {
+  private readonly logger = new Logger(FailoverEngineService.name);
+
+  constructor(
+    @InjectRepository(MessageRequest) private readonly requests: Repository<MessageRequest>,
+    @InjectRepository(MessageAttempt) private readonly attempts: Repository<MessageAttempt>,
+    @InjectRepository(FailoverPolicyStep) private readonly steps: Repository<FailoverPolicyStep>,
+    @InjectRepository(ChannelStrategy) private readonly channelStrategies: Repository<ChannelStrategy>,
+    @InjectRepository(Channel) private readonly channels: Repository<Channel>,
+    @InjectRepository(ContactIdentifier) private readonly contactIdentifiers: Repository<ContactIdentifier>,
+    @InjectRepository(Template) private readonly templates: Repository<Template>,
+    @InjectQueue(QUEUE_ATTEMPT) private readonly attemptQueue: Queue<AttemptJobData>,
+    @InjectQueue(QUEUE_TIMEOUT_CHECK) private readonly timeoutQueue: Queue<TimeoutCheckJobData>,
+    private readonly registry: ChannelAdapterRegistry,
+    private readonly encryption: EncryptionService,
+    private readonly renderer: TemplateRenderer,
+  ) {}
+
+  /** Entry point: called by the dispatch.processor when a new MessageRequest is created. */
+  async dispatch(messageRequestId: string): Promise<void> {
+    const request = await this.requests.findOneByOrFail({ id: messageRequestId });
+    const firstStep = await this.steps.findOneOrFail({
+      where: { failoverPolicyId: request.failoverPolicyId, stepOrder: 0 },
+    });
+    await this.requests.update(request.id, {
+      status: MessageRequestStatus.IN_PROGRESS,
+      currentStepOrder: firstStep.stepOrder,
+    });
+    await this.attemptQueue.add('execute', { messageRequestId, stepOrder: firstStep.stepOrder });
+  }
+
+  /** Called by the attempt.processor: resolve identifier, decrypt config, render template, send. */
+  async executeStep(messageRequestId: string, stepOrder: number): Promise<void> {
+    const request = await this.requests.findOneByOrFail({ id: messageRequestId });
+    if (request.status !== MessageRequestStatus.IN_PROGRESS || request.currentStepOrder !== stepOrder) {
+      this.logger.warn(`Skipping stale attempt job for request ${messageRequestId} step ${stepOrder}`);
+      return;
+    }
+
+    const step = await this.steps.findOneOrFail({
+      where: { failoverPolicyId: request.failoverPolicyId, stepOrder },
+    });
+    const strategy = await this.channelStrategies.findOneOrFail({ where: { id: step.channelStrategyId } });
+    const channel = await this.channels.findOneOrFail({ where: { id: strategy.channelId } });
+    const template = await this.templates.findOneOrFail({ where: { id: request.templateId } });
+
+    const identifier = await this.contactIdentifiers.findOne({
+      where: {
+        contactId: request.contactId,
+        channelType: channel.channelType,
+        identifierKind: this.registry.get(strategy.strategyKey).identifierKind,
+      },
+    });
+
+    const attempt = await this.attempts.save(
+      this.attempts.create({
+        messageRequestId,
+        failoverPolicyStepId: step.id,
+        channelStrategyId: strategy.id,
+        status: MessageAttemptStatus.QUEUED,
+      }),
+    );
+
+    if (!identifier) {
+      await this.attempts.update(attempt.id, {
+        status: MessageAttemptStatus.PROVIDER_ERROR,
+        errorCode: 'NO_IDENTIFIER',
+        errorMessage: `Contact has no ${channel.channelType} identifier for strategy ${strategy.strategyKey}`,
+        statusUpdatedAt: new Date(),
+      });
+      await this.advanceOrComplete(messageRequestId, stepOrder, false, strategy.id);
+      return;
+    }
+
+    const adapter = this.registry.get(strategy.strategyKey);
+    const channelConfig = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
+    const strategyConfig = strategy.configEncrypted ? this.encryption.decrypt(strategy.configEncrypted) : {};
+    const renderedBody = this.renderer.render(template.body, request.templateVariables);
+
+    let result: SendResult;
+    try {
+      result = await adapter.send({
+        recipientIdentifier: identifier.value,
+        templateBody: renderedBody,
+        variables: request.templateVariables,
+        channelConfig,
+        strategyConfig,
+        idempotencyKey: attempt.id,
+      });
+    } catch (err) {
+      result = {
+        status: 'provider_error',
+        rawResponse: { message: (err as Error).message },
+        errorCode: 'ADAPTER_THREW',
+        errorMessage: (err as Error).message,
+      };
+    }
+
+    await this.handleSendResult(attempt.id, step, strategy.id, channel.channelType, result);
+  }
+
+  private async handleSendResult(
+    attemptId: string,
+    step: FailoverPolicyStep,
+    channelStrategyId: string,
+    channelType: string,
+    result: SendResult,
+  ): Promise<void> {
+    if (result.status === 'provider_error') {
+      // TypeORM's QueryDeepPartialEntity recurses into jsonb object types in a
+      // way plain object literals can't structurally satisfy — cast is safe,
+      // providerResponse is stored as opaque JSON either way.
+      await this.attempts.update(attemptId, {
+        status: MessageAttemptStatus.PROVIDER_ERROR,
+        providerResponse: result.rawResponse,
+        errorCode: result.errorCode,
+        errorMessage: result.errorMessage,
+        statusUpdatedAt: new Date(),
+      } as any);
+      const attempt = await this.attempts.findOneByOrFail({ id: attemptId });
+      await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, false, channelStrategyId);
+      return;
+    }
+
+    await this.attempts.update(attemptId, {
+      status: MessageAttemptStatus.SENT,
+      providerMessageId: result.providerMessageId,
+      providerResponse: result.rawResponse,
+      sentAt: new Date(),
+    } as any);
+
+    if (step.advanceOn === AdvanceOn.PROVIDER_ERROR) {
+      // No delivery confirmation is expected for this step — a successful
+      // send() call is treated as final success immediately.
+      const attempt = await this.attempts.findOneByOrFail({ id: attemptId });
+      await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, true, channelStrategyId, attempt.id);
+      return;
+    }
+
+    const timeoutSeconds =
+      step.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS[channelType as keyof typeof DEFAULT_TIMEOUT_SECONDS] ?? 30;
+    const job = await this.timeoutQueue.add(
+      'check',
+      { messageAttemptId: attemptId },
+      { delay: timeoutSeconds * 1000 },
+    );
+    await this.attempts.update(attemptId, {
+      timeoutAt: new Date(Date.now() + timeoutSeconds * 1000),
+      timeoutJobId: job.id,
+    });
+  }
+
+  /** Called by the timeout-check.processor when a scheduled delayed job fires. */
+  async handleTimeout(messageAttemptId: string): Promise<void> {
+    const attempt = await this.attempts.findOneByOrFail({ id: messageAttemptId });
+    if (attempt.status !== MessageAttemptStatus.SENT) {
+      return; // already resolved by a webhook — no-op
+    }
+    await this.attempts.update(attempt.id, { status: MessageAttemptStatus.TIMED_OUT, statusUpdatedAt: new Date() });
+    const step = await this.steps.findOneByOrFail({ id: attempt.failoverPolicyStepId });
+    await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, false, attempt.channelStrategyId);
+  }
+
+  /** Called by the webhook-in.processor once a raw payload has been parsed by the adapter. */
+  async handleWebhookEvent(event: ParsedWebhookEvent): Promise<{ matchedAttemptId: string | null }> {
+    const attempt = await this.attempts.findOne({ where: { providerMessageId: event.providerMessageId } });
+    if (!attempt) return { matchedAttemptId: null };
+    if (attempt.status !== MessageAttemptStatus.SENT) {
+      // Already resolved (timeout fired first, or a duplicate webhook) — no-op.
+      return { matchedAttemptId: attempt.id };
+    }
+
+    if (attempt.timeoutJobId) {
+      try {
+        const job = await this.timeoutQueue.getJob(attempt.timeoutJobId);
+        await job?.remove();
+      } catch {
+        // job may already have started/finished — safe to ignore
+      }
+    }
+
+    const succeeded = event.status === 'delivered' || event.status === 'read';
+    await this.attempts.update(attempt.id, {
+      status: succeeded ? MessageAttemptStatus.DELIVERED : MessageAttemptStatus.UNDELIVERED,
+      errorCode: event.errorCode,
+      statusUpdatedAt: new Date(),
+    });
+
+    const step = await this.steps.findOneByOrFail({ id: attempt.failoverPolicyStepId });
+    await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, succeeded, attempt.channelStrategyId, attempt.id);
+    return { matchedAttemptId: attempt.id };
+  }
+
+  /**
+   * The single seam for state transitions. Uses a CAS UPDATE on
+   * (status = in_progress AND current_step_order = expectedStepOrder) so a
+   * timeout job and a webhook racing to resolve the same step can only
+   * advance the request once — the loser's UPDATE affects zero rows.
+   */
+  private async advanceOrComplete(
+    messageRequestId: string,
+    finishedStepOrder: number,
+    succeeded: boolean,
+    channelStrategyId: string,
+    winningAttemptId?: string,
+  ): Promise<void> {
+    if (succeeded) {
+      const result = await this.requests
+        .createQueryBuilder()
+        .update(MessageRequest)
+        .set({ status: MessageRequestStatus.DELIVERED, finalChannelStrategyId: channelStrategyId, completedAt: new Date() })
+        .where('id = :id AND status = :status AND current_step_order = :step', {
+          id: messageRequestId,
+          status: MessageRequestStatus.IN_PROGRESS,
+          step: finishedStepOrder,
+        })
+        .execute();
+      if ((result.affected ?? 0) > 0) {
+        await this.supersedeStrayAttempts(messageRequestId, winningAttemptId);
+      }
+      return;
+    }
+
+    const request = await this.requests.findOneByOrFail({ id: messageRequestId });
+    const nextStep = await this.steps.findOne({
+      where: { failoverPolicyId: request.failoverPolicyId, stepOrder: finishedStepOrder + 1 },
+    });
+
+    if (!nextStep) {
+      await this.requests
+        .createQueryBuilder()
+        .update(MessageRequest)
+        .set({ status: MessageRequestStatus.FAILED, completedAt: new Date() })
+        .where('id = :id AND status = :status AND current_step_order = :step', {
+          id: messageRequestId,
+          status: MessageRequestStatus.IN_PROGRESS,
+          step: finishedStepOrder,
+        })
+        .execute();
+      return;
+    }
+
+    const result = await this.requests
+      .createQueryBuilder()
+      .update(MessageRequest)
+      .set({ currentStepOrder: nextStep.stepOrder })
+      .where('id = :id AND status = :status AND current_step_order = :step', {
+        id: messageRequestId,
+        status: MessageRequestStatus.IN_PROGRESS,
+        step: finishedStepOrder,
+      })
+      .execute();
+
+    if ((result.affected ?? 0) > 0) {
+      await this.attemptQueue.add('execute', { messageRequestId, stepOrder: nextStep.stepOrder });
+    }
+  }
+
+  private async supersedeStrayAttempts(messageRequestId: string, excludeAttemptId?: string): Promise<void> {
+    const qb = this.attempts
+      .createQueryBuilder()
+      .update(MessageAttempt)
+      .set({ status: MessageAttemptStatus.SUPERSEDED })
+      .where('message_request_id = :id AND status IN (:...statuses)', {
+        id: messageRequestId,
+        statuses: [MessageAttemptStatus.QUEUED, MessageAttemptStatus.SENT],
+      });
+    if (excludeAttemptId) {
+      qb.andWhere('id != :excludeAttemptId', { excludeAttemptId });
+    }
+    await qb.execute();
+  }
+}

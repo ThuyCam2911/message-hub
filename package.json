@@ -1,0 +1,21 @@
+{
+  "name": "message-hub",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "libs/*",
+    "frontend"
+  ],
+  "scripts": {
+    "build:libs": "npm run build -w libs/domain && npm run build -w libs/shared && npm run build -w libs/adapters && npm run build -w libs/failover",
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:worker": "npm run start:dev -w apps/worker",
+    "dev:frontend": "npm run dev -w frontend",
+    "build": "npm run build:libs && npm run build -w apps/api && npm run build -w apps/worker && npm run build -w frontend",
+    "typeorm": "npm run typeorm -w apps/api --"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
