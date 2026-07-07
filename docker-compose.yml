@@ -25,5 +25,59 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      # Internal docker network hostnames/ports — overrides the host-mode
+      # dev values (localhost:5435/6379) from .env, which only make sense
+      # when the app runs directly on the host.
+      DATABASE_URL: postgres://message_hub:message_hub@postgres:5432/message_hub
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://message_hub:message_hub@postgres:5432/message_hub
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_PORT: 3001
+      # mock adapter's simulated async callback POSTs back to the API's
+      # webhook route — from inside the worker container that's the api
+      # service's internal DNS name, not localhost.
+      WEBHOOK_BASE_URL: http://api:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:

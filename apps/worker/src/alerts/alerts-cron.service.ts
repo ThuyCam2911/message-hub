@@ -44,7 +44,7 @@ export class AlertsCronService {
       JOIN channel_strategies cs ON cs.id = ma.channel_strategy_id
       JOIN channels c ON c.id = cs.channel_id
       JOIN message_requests mr ON mr.id = ma.message_request_id
-      WHERE ma.created_at > now() - interval '${WINDOW}'
+      WHERE ma."createdAt" > now() - interval '${WINDOW}'
       GROUP BY cs.id, mr.organization_id, c.name, cs.strategy_key
       HAVING COUNT(ma.id) >= ${MIN_SAMPLE_SIZE}
     `);
