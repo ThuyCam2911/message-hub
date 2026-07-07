@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api-client';
+import { hasRole } from '../lib/auth';
 
 interface AdapterInfo {
   strategyKey: string;
@@ -34,6 +35,7 @@ export default function ChannelsPage() {
 
   const [strategyKeyByChannel, setStrategyKeyByChannel] = useState<Record<string, string>>({});
   const [strategyConfigByChannel, setStrategyConfigByChannel] = useState<Record<string, string>>({});
+  const canManage = hasRole('admin');
 
   async function load() {
     try {
@@ -96,8 +98,12 @@ export default function ChannelsPage() {
       <h1>Channels</h1>
       {error && <p className="error">{error}</p>}
 
-      <h2>Add a channel</h2>
-      <form onSubmit={createChannel}>
+      {!canManage && <p className="muted">Chỉ admin mới có thể tạo/sửa channel. Bạn đang xem ở chế độ chỉ đọc.</p>}
+
+      {canManage && (
+        <>
+          <h2>Add a channel</h2>
+          <form onSubmit={createChannel}>
         <label>
           Channel type
           <select value={channelType} onChange={(e) => setChannelType(e.target.value)}>
@@ -121,7 +127,9 @@ export default function ChannelsPage() {
           <textarea rows={4} value={config} onChange={(e) => setConfig(e.target.value)} />
         </label>
         <button type="submit">Create channel</button>
-      </form>
+          </form>
+        </>
+      )}
 
       <h2>Configured channels</h2>
       {channels.map((c) => (
@@ -135,38 +143,42 @@ export default function ChannelsPage() {
             {c.strategies.map((s) => (
               <li key={s.id}>
                 {s.strategyKey}{' '}
-                <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
-                  Test connection
-                </button>
+                {canManage && (
+                  <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
+                    Test connection
+                  </button>
+                )}
               </li>
             ))}
           </ul>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginTop: '0.5rem' }}>
-            <label>
-              Add strategy
-              <select
-                value={strategyKeyByChannel[c.id] ?? adapters[0]?.strategyKey ?? ''}
-                onChange={(e) => setStrategyKeyByChannel({ ...strategyKeyByChannel, [c.id]: e.target.value })}
-              >
-                {adapters.map((a) => (
-                  <option key={a.strategyKey} value={a.strategyKey}>
-                    {a.strategyKey}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Strategy config (JSON)
-              <input
-                value={strategyConfigByChannel[c.id] ?? '{}'}
-                onChange={(e) => setStrategyConfigByChannel({ ...strategyConfigByChannel, [c.id]: e.target.value })}
-              />
-            </label>
-            <button type="button" onClick={() => addStrategy(c.id)}>
-              Add
-            </button>
-          </div>
+          {canManage && (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginTop: '0.5rem' }}>
+              <label>
+                Add strategy
+                <select
+                  value={strategyKeyByChannel[c.id] ?? adapters[0]?.strategyKey ?? ''}
+                  onChange={(e) => setStrategyKeyByChannel({ ...strategyKeyByChannel, [c.id]: e.target.value })}
+                >
+                  {adapters.map((a) => (
+                    <option key={a.strategyKey} value={a.strategyKey}>
+                      {a.strategyKey}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Strategy config (JSON)
+                <input
+                  value={strategyConfigByChannel[c.id] ?? '{}'}
+                  onChange={(e) => setStrategyConfigByChannel({ ...strategyConfigByChannel, [c.id]: e.target.value })}
+                />
+              </label>
+              <button type="button" onClick={() => addStrategy(c.id)}>
+                Add
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>

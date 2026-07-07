@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Template } from '@message-hub/domain';
 import { TemplateRenderer } from '@message-hub/shared';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { TemplatesService } from './templates.service';
 import { TemplatesController } from './templates.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Template]), OrganizationsModule],
+  imports: [TypeOrmModule.forFeature([Template]), OrganizationsModule, AuditLogModule],
   controllers: [TemplatesController],
   providers: [TemplatesService, TemplateRenderer],
   exports: [TemplatesService],

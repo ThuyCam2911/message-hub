@@ -4,11 +4,12 @@ import { Channel, ChannelStrategy } from '@message-hub/domain';
 import { AdaptersModule } from '@message-hub/adapters';
 import { EncryptionService } from '@message-hub/shared';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { ChannelsService } from './channels.service';
 import { ChannelsController } from './channels.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Channel, ChannelStrategy]), AdaptersModule, OrganizationsModule],
+  imports: [TypeOrmModule.forFeature([Channel, ChannelStrategy]), AdaptersModule, OrganizationsModule, AuditLogModule],
   controllers: [ChannelsController],
   providers: [ChannelsService, EncryptionService],
   exports: [ChannelsService],

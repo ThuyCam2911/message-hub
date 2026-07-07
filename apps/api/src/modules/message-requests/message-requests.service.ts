@@ -17,10 +17,11 @@ export class MessageRequestsService {
     private readonly orgs: OrganizationsService,
   ) {}
 
-  async create(dto: CreateMessageRequestDto) {
+  async create(dto: CreateMessageRequestDto, campaignId?: string) {
     const request = await this.requests.save(
       this.requests.create({
         organizationId: this.orgs.getDefaultOrganizationId(),
+        campaignId,
         contactId: dto.contactId,
         templateId: dto.templateId,
         failoverPolicyId: dto.failoverPolicyId,

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api-client';
+import { hasRole } from '../lib/auth';
 
 interface Identifier {
   id: string;
@@ -19,12 +20,21 @@ interface Contact {
 
 const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email', 'mock'];
 
+interface ImportResult {
+  totalRows: number;
+  created: number;
+  errors: { row: number; message: string }[];
+}
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [expanded, setExpanded] = useState<Record<string, Contact>>({});
   const [error, setError] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState('');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const [idChannelType, setIdChannelType] = useState<Record<string, string>>({});
   const [idKind, setIdKind] = useState<Record<string, string>>({});
@@ -54,6 +64,26 @@ export default function ContactsPage() {
     }
   }
 
+  async function importCsv(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importFile) return;
+    setError(null);
+    setImportResult(null);
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      const result = await api.post<ImportResult>('/contacts/import', formData);
+      setImportResult(result);
+      setImportFile(null);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function toggleExpand(id: string) {
     if (expanded[id]) {
       const next = { ...expanded };
@@ -80,19 +110,64 @@ export default function ContactsPage() {
     }
   }
 
+  const canManage = hasRole('admin', 'operator');
+
   return (
     <div>
       <h1>Contacts</h1>
       {error && <p className="error">{error}</p>}
+      {!canManage && <p className="muted">Bạn đang xem ở chế độ chỉ đọc (viewer).</p>}
 
-      <h2>Add a contact</h2>
-      <form onSubmit={createContact}>
-        <label>
-          Display name
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
-        </label>
-        <button type="submit">Create contact</button>
-      </form>
+      {canManage && (
+        <>
+          <h2>Add a contact</h2>
+          <form onSubmit={createContact}>
+            <label>
+              Display name
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
+            </label>
+            <button type="submit">Create contact</button>
+          </form>
+
+          <h2>Import CSV</h2>
+          <p className="muted">
+            Cột bắt buộc: <code>displayName</code>. Cột identifier tùy chọn (ít nhất 1): <code>email</code>,{' '}
+            <code>sms_phone</code>, <code>zbs_phone</code>, <code>zbs_uid</code>, <code>whatsapp_phone</code>,{' '}
+            <code>telegram_chat_id</code>, <code>line_user_id</code>, và <code>externalRef</code> (tùy chọn).
+          </p>
+          <form onSubmit={importCsv}>
+            <label>
+              CSV file
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                required
+              />
+            </label>
+            <button type="submit" disabled={!importFile || importing}>
+              {importing ? 'Đang import...' : 'Import'}
+            </button>
+          </form>
+        </>
+      )}
+      {importResult && (
+        <div className="card">
+          <div>
+            Tổng {importResult.totalRows} dòng — tạo thành công <strong>{importResult.created}</strong>, lỗi{' '}
+            <strong>{importResult.errors.length}</strong>
+          </div>
+          {importResult.errors.length > 0 && (
+            <ul className="muted">
+              {importResult.errors.map((e, i) => (
+                <li key={i}>
+                  Dòng {e.row}: {e.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <h2>Contacts</h2>
       {contacts.map((c) => (

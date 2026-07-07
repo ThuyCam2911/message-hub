@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import './globals.css';
+import AuthGate from './components/AuthGate';
 
 export const metadata: Metadata = {
   title: 'Message Hub',
@@ -11,17 +11,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <nav>
-          <Link href="/">Message Hub</Link>
-          <Link href="/channels">Channels</Link>
-          <Link href="/templates">Templates</Link>
-          <Link href="/contacts">Contacts</Link>
-          <Link href="/failover-policies">Failover Policies</Link>
-          <Link href="/send-test">Send Test</Link>
-          <Link href="/messages">Messages</Link>
-          <Link href="/analytics">Analytics</Link>
-        </nav>
-        <main>{children}</main>
+        <AuthGate>
+          <main>{children}</main>
+        </AuthGate>
       </body>
     </html>
   );

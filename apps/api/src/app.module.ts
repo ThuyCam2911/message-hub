@@ -13,12 +13,17 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { CampaignsModule } from './modules/campaigns/campaigns.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot(getDatabaseConfig()),
     BullModule.forRoot({ connection: getBullConnection() }),
     OrganizationsModule,
+    AuthModule,
+    AuditLogModule,
     ChannelsModule,
     TemplatesModule,
     ContactsModule,
@@ -28,6 +33,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
     RealtimeModule,
     AnalyticsModule,
     AlertsModule,
+    CampaignsModule,
   ],
 })
 export class AppModule {}
