@@ -93,6 +93,34 @@ export class ZbsPhoneAdapter implements ChannelAdapter {
     return { valid: true };
   }
 
+  /** Lists ZNS templates already approved for this OA on Zalo's side, so the UI can offer a picker instead of a free-text templateId. */
+  async listTemplates(
+    channelConfig: Record<string, unknown>,
+  ): Promise<{ templateId: string; templateName: string; status: string }[]> {
+    const config = channelConfig as unknown as ZnsChannelConfig;
+    let response;
+    try {
+      response = await axios.get('https://business.openapi.zalo.me/template/all', {
+        params: { offset: 0, limit: 100 },
+        headers: { access_token: config.accessToken },
+      });
+    } catch (err) {
+      const error = err as { response?: { data?: { message?: string } }; message: string };
+      throw new Error(error.response?.data?.message || error.message);
+    }
+
+    if (response.data?.error && response.data.error !== 0) {
+      throw new Error(response.data.message || `Zalo API trả về lỗi ${response.data.error} khi lấy danh sách template`);
+    }
+
+    const templates = (response.data?.data ?? []) as Record<string, unknown>[];
+    return templates.map((t) => ({
+      templateId: String(t.templateId ?? t.template_id ?? ''),
+      templateName: String(t.templateName ?? t.template_name ?? ''),
+      status: String(t.status ?? t.templateStatus ?? 'unknown'),
+    }));
+  }
+
   getConfigSchema(): AdapterConfigSchema {
     return {
       type: 'object',

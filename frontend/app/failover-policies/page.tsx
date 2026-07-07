@@ -35,7 +35,14 @@ interface StepDraft {
 interface Policy {
   id: string;
   name: string;
+  description?: string;
+  isActive: boolean;
   steps: { stepOrder: number; channelStrategyId: string; timeoutSeconds?: number; advanceOn: string }[];
+}
+
+interface MutationOutcome {
+  deleted: boolean;
+  deactivated: boolean;
 }
 
 function newStepDraft(): StepDraft {
@@ -145,7 +152,9 @@ export default function FailoverPoliciesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [steps, setSteps] = useState<StepDraft[]>([newStepDraft()]);
+  const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -193,21 +202,65 @@ export default function FailoverPoliciesPage() {
     setSteps(arrayMove(steps, index, target));
   }
 
-  async function createPolicy(e: React.FormEvent) {
+  function resetForm() {
+    setEditingPolicyId(null);
+    setName('');
+    setDescription('');
+    setSteps([newStepDraft()]);
+  }
+
+  function startEdit(p: Policy) {
+    setEditingPolicyId(p.id);
+    setName(p.name);
+    setDescription(p.description ?? '');
+    setSteps(
+      p.steps.map((s) => ({
+        id: crypto.randomUUID(),
+        channelStrategyId: s.channelStrategyId,
+        timeoutSeconds: s.timeoutSeconds,
+        advanceOn: s.advanceOn as StepDraft['advanceOn'],
+      })),
+    );
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function submitPolicy(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const payload = {
+      name,
+      description: description || undefined,
+      steps: steps.map((s, index) => ({
+        stepOrder: index,
+        channelStrategyId: s.channelStrategyId,
+        timeoutSeconds: s.timeoutSeconds,
+        advanceOn: s.advanceOn,
+      })),
+    };
     try {
-      await api.post('/failover-policies', {
-        name,
-        steps: steps.map((s, index) => ({
-          stepOrder: index,
-          channelStrategyId: s.channelStrategyId,
-          timeoutSeconds: s.timeoutSeconds,
-          advanceOn: s.advanceOn,
-        })),
-      });
-      setName('');
-      setSteps([newStepDraft()]);
+      if (editingPolicyId) {
+        await api.patch(`/failover-policies/${editingPolicyId}`, payload);
+      } else {
+        await api.post('/failover-policies', payload);
+      }
+      resetForm();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function deletePolicy(p: Policy) {
+    if (!confirm(`Xoá policy "${p.name}"? Nếu đã được dùng, hệ thống sẽ tự động deactivate thay vì xoá hẳn.`)) return;
+    setError(null);
+    try {
+      const result = await api.delete<MutationOutcome>(`/failover-policies/${p.id}`);
+      alert(
+        result.deleted
+          ? 'Đã xoá policy.'
+          : 'Policy đang được dùng bởi campaign/message nên đã chuyển sang Inactive thay vì xoá.',
+      );
+      if (editingPolicyId === p.id) resetForm();
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -223,12 +276,22 @@ export default function FailoverPoliciesPage() {
         nên đặt advance_on = provider_error nếu kênh đó không có delivery webhook (vd SMS/email cơ bản).
       </p>
 
-      <h2>Create a policy</h2>
-      <form onSubmit={createPolicy}>
+      <h2>{editingPolicyId ? 'Edit policy' : 'Create a policy'}</h2>
+      <form onSubmit={submitPolicy}>
         <label>
           Name
           <input value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
+        <label>
+          Description (optional)
+          <input value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+
+        {editingPolicyId && (
+          <p className="muted" style={{ fontSize: '0.78rem' }}>
+            Nếu policy này đã dùng để gửi tin, phần steps sẽ không sửa được — chỉ tên/mô tả được cập nhật.
+          </p>
+        )}
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={steps.map((s) => s.id)} strategy={verticalListSortingStrategy}>
@@ -252,13 +315,34 @@ export default function FailoverPoliciesPage() {
         <button type="button" className="secondary" onClick={addStepRow}>
           + Add step
         </button>
-        <button type="submit">Create policy</button>
+        <button type="submit">{editingPolicyId ? 'Update policy' : 'Create policy'}</button>
+        {editingPolicyId && (
+          <button type="button" className="secondary" onClick={resetForm}>
+            Cancel edit
+          </button>
+        )}
       </form>
 
       <h2>Existing policies</h2>
       {policies.map((p) => (
         <div className="card" key={p.id}>
-          <strong>{p.name}</strong>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <strong>{p.name}</strong>
+              {p.description && <div className="muted">{p.description}</div>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className={`badge ${p.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                {p.isActive ? 'Active' : 'Inactive'}
+              </span>
+              <button type="button" className="secondary" onClick={() => startEdit(p)}>
+                Edit
+              </button>
+              <button type="button" className="secondary" onClick={() => deletePolicy(p)}>
+                Delete
+              </button>
+            </div>
+          </div>
           <ol>
             {p.steps.map((s) => (
               <li key={s.stepOrder}>

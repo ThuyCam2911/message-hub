@@ -24,6 +24,13 @@ interface AdapterInfo {
   configSchema: ConfigSchema;
 }
 
+interface StrategyView {
+  id: string;
+  strategyKey: string;
+  adapterName: string;
+  isActive: boolean;
+}
+
 interface ChannelView {
   id: string;
   channelType: string;
@@ -31,7 +38,12 @@ interface ChannelView {
   provider: string;
   isActive: boolean;
   configPreview: string;
-  strategies: { id: string; strategyKey: string; adapterName: string; isActive: boolean }[];
+  strategies: StrategyView[];
+}
+
+interface MutationOutcome {
+  deleted: boolean;
+  deactivated: boolean;
 }
 
 type ConfigValues = Record<string, string | boolean>;
@@ -47,6 +59,10 @@ const CHANNEL_ICONS: Record<string, string> = {
   email: '✉️',
   mock: '🧪',
 };
+
+function outcomeMessage(result: MutationOutcome, deletedLabel: string, deactivatedLabel: string): string {
+  return result.deleted ? deletedLabel : deactivatedLabel;
+}
 
 // Multiple adapters can share a channelType (e.g. zbs_uid + zbs_phone both
 // need an "accessToken"); merge their schemas so the channel-level form
@@ -66,7 +82,8 @@ function mergeSchemasForChannelType(channelType: string, adapters: AdapterInfo[]
 
 // Only include a key if the user actually touched that field — leaving a
 // field untouched means "don't send it" (relevant for optional
-// strategy-level overrides layered on top of the channel's own config).
+// strategy-level overrides layered on top of the channel's own config, and
+// for edit forms where blank = "keep the current value").
 function buildConfigPayload(schema: ConfigSchema, values: ConfigValues): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, prop] of Object.entries(schema.properties)) {
@@ -159,6 +176,16 @@ export default function ChannelsPage() {
   const [strategyConfigValuesByChannel, setStrategyConfigValuesByChannel] = useState<Record<string, ConfigValues>>({});
   const canManage = hasRole('admin');
 
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editProvider, setEditProvider] = useState('');
+  const [editActive, setEditActive] = useState(true);
+  const [editConfigValues, setEditConfigValues] = useState<ConfigValues>({});
+
+  const [editingStrategyRowKey, setEditingStrategyRowKey] = useState<string | null>(null);
+  const [editStrategyActive, setEditStrategyActive] = useState(true);
+  const [editStrategyConfigValues, setEditStrategyConfigValues] = useState<ConfigValues>({});
+
   async function load() {
     try {
       const [c, a] = await Promise.all([api.get<ChannelView[]>('/channels'), api.get<AdapterInfo[]>('/channels/adapters')]);
@@ -212,6 +239,78 @@ export default function ChannelsPage() {
         {},
       );
       alert(result.valid ? 'Connection OK' : `Failed: ${result.error}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function startEditChannel(c: ChannelView) {
+    setEditingChannelId(c.id);
+    setEditName(c.name);
+    setEditProvider(c.provider);
+    setEditActive(c.isActive);
+    setEditConfigValues({});
+  }
+
+  function cancelEditChannel() {
+    setEditingChannelId(null);
+  }
+
+  async function saveEditChannel(c: ChannelView) {
+    setError(null);
+    try {
+      const schema = mergeSchemasForChannelType(c.channelType, adapters);
+      const config = buildConfigPayload(schema, editConfigValues);
+      await api.patch(`/channels/${c.id}`, { name: editName, provider: editProvider, isActive: editActive, config });
+      setEditingChannelId(null);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function deleteChannel(c: ChannelView) {
+    if (!confirm(`Xoá channel "${c.name}"? Nếu đã được dùng, hệ thống sẽ tự động deactivate thay vì xoá hẳn.`)) return;
+    setError(null);
+    try {
+      const result = await api.delete<MutationOutcome>(`/channels/${c.id}`);
+      alert(outcomeMessage(result, 'Đã xoá channel.', 'Channel đang được dùng nên đã chuyển sang Inactive thay vì xoá.'));
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function startEditStrategy(channelId: string, s: StrategyView) {
+    setEditingStrategyRowKey(`${channelId}:${s.id}`);
+    setEditStrategyActive(s.isActive);
+    setEditStrategyConfigValues({});
+  }
+
+  function cancelEditStrategy() {
+    setEditingStrategyRowKey(null);
+  }
+
+  async function saveEditStrategy(channelId: string, s: StrategyView) {
+    setError(null);
+    try {
+      const adapter = adapters.find((a) => a.strategyKey === s.strategyKey);
+      const config = adapter ? buildConfigPayload(adapter.configSchema, editStrategyConfigValues) : {};
+      await api.patch(`/channels/${channelId}/strategies/${s.id}`, { isActive: editStrategyActive, config });
+      setEditingStrategyRowKey(null);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function deleteStrategy(channelId: string, s: StrategyView) {
+    if (!confirm(`Xoá strategy "${s.strategyKey}"?`)) return;
+    setError(null);
+    try {
+      const result = await api.delete<MutationOutcome>(`/channels/${channelId}/strategies/${s.id}`);
+      alert(outcomeMessage(result, 'Đã xoá strategy.', 'Strategy đang được dùng nên đã chuyển sang Inactive thay vì xoá.'));
+      await load();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -287,6 +386,7 @@ export default function ChannelsPage() {
       {channels.map((c) => {
         const selectedStrategyKey = strategyKeyByChannel[c.id] ?? adapters[0]?.strategyKey;
         const selectedAdapter = adapters.find((a) => a.strategyKey === selectedStrategyKey);
+        const isEditingChannel = editingChannelId === c.id;
 
         return (
           <div className="card" key={c.id}>
@@ -300,14 +400,75 @@ export default function ChannelsPage() {
                   </span>
                 </div>
               </div>
-              <span className={`badge ${c.isActive ? 'badge-active' : 'badge-inactive'}`}>
-                {c.isActive ? 'Active' : 'Inactive'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className={`badge ${c.isActive ? 'badge-active' : 'badge-inactive'}`}>
+                  {c.isActive ? 'Active' : 'Inactive'}
+                </span>
+                {canManage && (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => (isEditingChannel ? cancelEditChannel() : startEditChannel(c))}
+                    >
+                      {isEditingChannel ? 'Cancel' : 'Edit'}
+                    </button>
+                    <button type="button" className="secondary" onClick={() => deleteChannel(c)}>
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="muted" style={{ marginTop: '0.5rem' }}>
-              Config: <code className="gz-code-block" style={{ padding: '0.1rem 0.4rem' }}>{c.configPreview || '(none)'}</code>
-            </div>
+            {isEditingChannel ? (
+              <div
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '0.75rem',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.6rem',
+                }}
+              >
+                <label>
+                  Name
+                  <input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+                </label>
+                <label>
+                  Provider
+                  <input value={editProvider} onChange={(e) => setEditProvider(e.target.value)} required />
+                </label>
+                <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.45rem' }}>
+                  <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
+                  Active
+                </label>
+                <span className="muted" style={{ fontSize: '0.76rem' }}>
+                  Chỉ điền field cấu hình muốn đổi — để trống sẽ giữ nguyên giá trị hiện tại.
+                </span>
+                <ConfigFieldsForm
+                  schema={mergeSchemasForChannelType(c.channelType, adapters)}
+                  values={editConfigValues}
+                  onChange={(key, value) => setEditConfigValues({ ...editConfigValues, [key]: value })}
+                  markRequired={false}
+                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button type="button" onClick={() => saveEditChannel(c)}>
+                    Save
+                  </button>
+                  <button type="button" className="secondary" onClick={cancelEditChannel}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="muted" style={{ marginTop: '0.5rem' }}>
+                Config: <code className="gz-code-block" style={{ padding: '0.1rem 0.4rem' }}>{c.configPreview || '(none)'}</code>
+              </div>
+            )}
 
             <hr className="gz-section-divider" />
 
@@ -317,27 +478,95 @@ export default function ChannelsPage() {
             {c.strategies.length === 0 && <p className="muted">Chưa có strategy nào.</p>}
             {c.strategies.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.5rem' }}>
-                {c.strategies.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: 'var(--surface-hover)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 8,
-                      padding: '0.45rem 0.7rem',
-                    }}
-                  >
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{s.strategyKey}</span>
-                    {canManage && (
-                      <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
-                        Test connection
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {c.strategies.map((s) => {
+                  const rowKey = `${c.id}:${s.id}`;
+                  const isEditingStrategy = editingStrategyRowKey === rowKey;
+                  const strategyAdapter = adapters.find((a) => a.strategyKey === s.strategyKey);
+                  return (
+                    <div key={s.id}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'var(--surface-hover)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 8,
+                          padding: '0.45rem 0.7rem',
+                          gap: '0.5rem',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{s.strategyKey}</span>
+                          {!s.isActive && (
+                            <span className="badge badge-inactive" style={{ fontSize: '0.65rem' }}>
+                              Inactive
+                            </span>
+                          )}
+                        </span>
+                        {canManage && (
+                          <span style={{ display: 'flex', gap: '0.4rem' }}>
+                            <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
+                              Test connection
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => (isEditingStrategy ? cancelEditStrategy() : startEditStrategy(c.id, s))}
+                            >
+                              {isEditingStrategy ? 'Cancel' : 'Edit'}
+                            </button>
+                            <button type="button" className="secondary" onClick={() => deleteStrategy(c.id, s)}>
+                              Delete
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      {isEditingStrategy && (
+                        <div
+                          style={{
+                            marginTop: '0.4rem',
+                            padding: '0.6rem 0.7rem',
+                            background: 'var(--bg)',
+                            border: '1px dashed var(--border-strong)',
+                            borderRadius: 8,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                          }}
+                        >
+                          <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.45rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={editStrategyActive}
+                              onChange={(e) => setEditStrategyActive(e.target.checked)}
+                            />
+                            Active
+                          </label>
+                          {strategyAdapter && Object.keys(strategyAdapter.configSchema.properties).length > 0 && (
+                            <ConfigFieldsForm
+                              schema={strategyAdapter.configSchema}
+                              values={editStrategyConfigValues}
+                              onChange={(key, value) =>
+                                setEditStrategyConfigValues({ ...editStrategyConfigValues, [key]: value })
+                              }
+                              markRequired={false}
+                            />
+                          )}
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button type="button" onClick={() => saveEditStrategy(c.id, s)}>
+                              Save
+                            </button>
+                            <button type="button" className="secondary" onClick={cancelEditStrategy}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

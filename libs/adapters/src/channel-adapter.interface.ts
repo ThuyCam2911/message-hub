@@ -74,6 +74,13 @@ export interface ChannelAdapter {
   getConfigSchema(): AdapterConfigSchema;
 
   /**
+   * Optional: providers with a server-side template registry (e.g. Zalo ZNS
+   * pre-approved templates) can expose it so the Templates UI lets users pick
+   * a real templateId instead of typing one by hand.
+   */
+  listTemplates?(channelConfig: Record<string, unknown>): Promise<{ templateId: string; templateName: string; status: string }[]>;
+
+  /**
    * Optional provider-specific webhook signature check (e.g. Meta's
    * X-Hub-Signature-256 HMAC). rawBody is the exact bytes received, required
    * because signatures are computed over the raw payload, not the

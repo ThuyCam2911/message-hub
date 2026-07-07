@@ -12,12 +12,25 @@ interface Template {
   variables: string[];
 }
 
+interface ChannelOption {
+  id: string;
+  name: string;
+  channelType: string;
+}
+
+interface ZaloTemplateSummary {
+  templateId: string;
+  templateName: string;
+  status: string;
+}
+
 const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email', 'mock'];
 
 type BodyMode = 'plain' | 'email' | 'zns';
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const canManage = hasRole('admin', 'operator');
 
@@ -33,9 +46,17 @@ export default function TemplatesPage() {
   const [znsTemplateId, setZnsTemplateId] = useState('');
   const [znsTemplateData, setZnsTemplateData] = useState('{"customer_name":"{{name}}","otp":"{{code}}"}');
 
+  // Zalo ZNS template sync — pulls the OA's already-approved templates
+  // instead of making the user type a templateId by hand.
+  const [syncChannelId, setSyncChannelId] = useState('');
+  const [zaloTemplates, setZaloTemplates] = useState<ZaloTemplateSummary[]>([]);
+  const [syncing, setSyncing] = useState(false);
+
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [previewVariables, setPreviewVariables] = useState('{}');
   const [previewResult, setPreviewResult] = useState<unknown>(null);
+
+  const zbsChannels = channels.filter((c) => c.channelType === 'zbs');
 
   function onChannelTypeChange(value: string) {
     setChannelType(value);
@@ -44,7 +65,12 @@ export default function TemplatesPage() {
 
   async function load() {
     try {
-      setTemplates(await api.get<Template[]>('/templates'));
+      const [t, c] = await Promise.all([
+        api.get<Template[]>('/templates'),
+        api.get<ChannelOption[]>('/channels'),
+      ]);
+      setTemplates(t);
+      setChannels(c);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -53,6 +79,20 @@ export default function TemplatesPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function syncZaloTemplates() {
+    if (!syncChannelId) return;
+    setError(null);
+    setSyncing(true);
+    try {
+      const result = await api.get<ZaloTemplateSummary[]>(`/channels/${syncChannelId}/zalo-templates`);
+      setZaloTemplates(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function createTemplate(e: React.FormEvent) {
     e.preventDefault();
@@ -153,8 +193,55 @@ export default function TemplatesPage() {
 
             {bodyMode === 'zns' && (
               <>
+                <div
+                  style={{
+                    padding: '0.75rem',
+                    background: 'var(--bg)',
+                    border: '1px dashed var(--border-strong)',
+                    borderRadius: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.6rem',
+                    marginBottom: '0.4rem',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sync template từ Zalo</strong>
+                  <label>
+                    Channel Zalo (cần có strategy zbs_phone đã cấu hình access token)
+                    <select value={syncChannelId} onChange={(e) => setSyncChannelId(e.target.value)}>
+                      <option value="">-- chọn channel --</option>
+                      {zbsChannels.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className="secondary" onClick={syncZaloTemplates} disabled={!syncChannelId || syncing}>
+                    {syncing ? 'Đang sync...' : 'Sync template từ Zalo'}
+                  </button>
+                  {zaloTemplates.length > 0 && (
+                    <label>
+                      Chọn template đã sync ({zaloTemplates.length})
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const picked = zaloTemplates.find((t) => t.templateId === e.target.value);
+                          if (picked) setZnsTemplateId(picked.templateId);
+                        }}
+                      >
+                        <option value="">-- chọn --</option>
+                        {zaloTemplates.map((t) => (
+                          <option key={t.templateId} value={t.templateId}>
+                            {t.templateName} ({t.status}) — {t.templateId}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
                 <label>
-                  Zalo ZNS Template ID (pre-approved with Zalo)
+                  Zalo ZNS Template ID (pre-approved với Zalo)
                   <input value={znsTemplateId} onChange={(e) => setZnsTemplateId(e.target.value)} required />
                 </label>
                 <label>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '../lib/api-client';
 import { hasRole } from '../lib/auth';
 
@@ -37,6 +38,7 @@ export default function CampaignsPage() {
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [failoverPolicyId, setFailoverPolicyId] = useState('');
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 
   const [allContacts, setAllContacts] = useState<Record<string, boolean>>({});
   const [selectedContacts, setSelectedContacts] = useState<Record<string, string[]>>({});
@@ -64,12 +66,43 @@ export default function CampaignsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  async function createCampaign(e: React.FormEvent) {
+  function resetForm() {
+    setEditingCampaignId(null);
+    setName('');
+    setTemplateId('');
+    setFailoverPolicyId('');
+  }
+
+  function startEdit(c: Campaign) {
+    setEditingCampaignId(c.id);
+    setName(c.name);
+    setTemplateId(c.templateId);
+    setFailoverPolicyId(c.failoverPolicyId);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function submitCampaign(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await api.post('/campaigns', { name, templateId, failoverPolicyId });
-      setName('');
+      if (editingCampaignId) {
+        await api.patch(`/campaigns/${editingCampaignId}`, { name, templateId, failoverPolicyId });
+      } else {
+        await api.post('/campaigns', { name, templateId, failoverPolicyId });
+      }
+      resetForm();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function deleteCampaign(c: Campaign) {
+    if (!confirm(`Xoá campaign "${c.name}"?`)) return;
+    setError(null);
+    try {
+      await api.delete(`/campaigns/${c.id}`);
+      if (editingCampaignId === c.id) resetForm();
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -107,8 +140,8 @@ export default function CampaignsPage() {
 
       {canManage && (
         <>
-          <h2>Create a campaign</h2>
-          <form onSubmit={createCampaign}>
+          <h2>{editingCampaignId ? 'Edit campaign' : 'Create a campaign'}</h2>
+          <form onSubmit={submitCampaign}>
             <label>
               Name
               <input value={name} onChange={(e) => setName(e.target.value)} required />
@@ -135,7 +168,12 @@ export default function CampaignsPage() {
                 ))}
               </select>
             </label>
-            <button type="submit">Create campaign</button>
+            <button type="submit">{editingCampaignId ? 'Update campaign' : 'Create campaign'}</button>
+            {editingCampaignId && (
+              <button type="button" className="secondary" onClick={resetForm}>
+                Cancel edit
+              </button>
+            )}
           </form>
         </>
       )}
@@ -143,9 +181,28 @@ export default function CampaignsPage() {
       <h2>Campaigns</h2>
       {campaigns.map((c) => (
         <div className="card" key={c.id}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong>{c.name}</strong>
-            <span className={`badge badge-${c.status === 'running' ? 'in_progress' : c.status}`}>{c.status}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <Link href={`/campaigns/${c.id}`} style={{ textDecoration: 'none' }}>
+              <strong style={{ color: 'var(--text)' }}>{c.name}</strong>
+            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className={`badge badge-${c.status === 'running' ? 'in_progress' : c.status}`}>{c.status}</span>
+              <Link href={`/campaigns/${c.id}`}>
+                <button type="button" className="secondary">
+                  Xem chi tiết
+                </button>
+              </Link>
+              {canManage && c.status === 'draft' && (
+                <>
+                  <button type="button" className="secondary" onClick={() => startEdit(c)}>
+                    Edit
+                  </button>
+                  <button type="button" className="secondary" onClick={() => deleteCampaign(c)}>
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <div className="muted" style={{ marginTop: '0.4rem' }}>
             Tổng {c.progress.total} — delivered {c.progress.delivered}, failed {c.progress.failed}, in progress{' '}
