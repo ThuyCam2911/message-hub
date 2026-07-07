@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api-client';
+import { getSocket } from '../lib/ws-client';
 
 interface Attempt {
   id: string;
@@ -31,6 +32,8 @@ export default function MessagesPage() {
   const [detail, setDetail] = useState<Record<string, (MessageRequest & { attempts: Attempt[] }) | undefined>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
+  const expandedIdRef = useRef<string | null>(null);
 
   async function load() {
     try {
@@ -40,10 +43,43 @@ export default function MessagesPage() {
     }
   }
 
+  async function refreshDetail(id: string) {
+    const d = await api.get<MessageRequest & { attempts: Attempt[] }>(`/message-requests/${id}`);
+    setDetail((prev) => ({ ...prev, [id]: d }));
+  }
+
+  useEffect(() => {
+    expandedIdRef.current = expandedId;
+  }, [expandedId]);
+
   useEffect(() => {
     load();
-    const interval = setInterval(load, 3000);
-    return () => clearInterval(interval);
+    // 15s fallback poll in case the WebSocket connection drops; the socket
+    // events below are what actually make the page feel live.
+    const interval = setInterval(load, 15000);
+
+    const socket = getSocket();
+    const onConnect = () => setLive(true);
+    const onDisconnect = () => setLive(false);
+    const onUpdate = (event: { messageRequestId: string }) => {
+      load();
+      if (expandedIdRef.current === event.messageRequestId) {
+        refreshDetail(event.messageRequestId);
+      }
+    };
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('message-request-updated', onUpdate);
+    socket.on('message-attempt-updated', onUpdate);
+    setLive(socket.connected);
+
+    return () => {
+      clearInterval(interval);
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('message-request-updated', onUpdate);
+      socket.off('message-attempt-updated', onUpdate);
+    };
   }, []);
 
   async function toggleExpand(id: string) {
@@ -51,16 +87,20 @@ export default function MessagesPage() {
       setExpandedId(null);
       return;
     }
-    const d = await api.get<MessageRequest & { attempts: Attempt[] }>(`/message-requests/${id}`);
-    setDetail({ ...detail, [id]: d });
+    await refreshDetail(id);
     setExpandedId(id);
   }
 
   return (
     <div>
-      <h1>Messages</h1>
+      <h1>
+        Messages{' '}
+        <span className="muted" style={{ fontSize: '0.7rem' }}>
+          {live ? '🟢 live' : '🔴 offline (đang dùng poll dự phòng)'}
+        </span>
+      </h1>
       {error && <p className="error">{error}</p>}
-      <p className="muted">Tự động refresh mỗi 3 giây. Click một dòng để xem chi tiết từng attempt trong chuỗi failover.</p>
+      <p className="muted">Cập nhật tức thời qua WebSocket. Click một dòng để xem chi tiết từng attempt trong chuỗi failover.</p>
 
       <table>
         <thead>

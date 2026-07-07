@@ -19,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link href="/failover-policies">Failover Policies</Link>
           <Link href="/send-test">Send Test</Link>
           <Link href="/messages">Messages</Link>
+          <Link href="/analytics">Analytics</Link>
         </nav>
         <main>{children}</main>
       </body>

@@ -10,6 +10,9 @@ import { ContactsModule } from './modules/contacts/contacts.module';
 import { FailoverPoliciesModule } from './modules/failover-policies/failover-policies.module';
 import { MessageRequestsModule } from './modules/message-requests/message-requests.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     FailoverPoliciesModule,
     MessageRequestsModule,
     WebhooksModule,
+    RealtimeModule,
+    AnalyticsModule,
+    AlertsModule,
   ],
 })
 export class AppModule {}

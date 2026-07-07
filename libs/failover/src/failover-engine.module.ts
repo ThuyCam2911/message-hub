@@ -11,7 +11,7 @@ import {
   Template,
 } from '@message-hub/domain';
 import { AdaptersModule } from '@message-hub/adapters';
-import { EncryptionService, TemplateRenderer } from '@message-hub/shared';
+import { EncryptionService, RealtimeEventsPublisher, TemplateRenderer } from '@message-hub/shared';
 import { FailoverEngineService } from './failover-engine.service';
 import { QUEUE_ATTEMPT, QUEUE_TIMEOUT_CHECK } from './queue-names';
 
@@ -29,7 +29,7 @@ import { QUEUE_ATTEMPT, QUEUE_TIMEOUT_CHECK } from './queue-names';
     BullModule.registerQueue({ name: QUEUE_ATTEMPT }, { name: QUEUE_TIMEOUT_CHECK }),
     AdaptersModule,
   ],
-  providers: [FailoverEngineService, EncryptionService, TemplateRenderer],
+  providers: [FailoverEngineService, EncryptionService, TemplateRenderer, RealtimeEventsPublisher],
   exports: [FailoverEngineService],
 })
 export class FailoverEngineModule {}

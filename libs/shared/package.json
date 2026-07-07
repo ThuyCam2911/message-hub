@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@nestjs/common": "^10.4.0"
+    "@nestjs/common": "^10.4.0",
+    "ioredis": "^5.10.1"
   }
 }

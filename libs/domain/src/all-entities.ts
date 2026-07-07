@@ -13,6 +13,7 @@ import {
   MessageAttempt,
   WebhookEvent,
   AuditLog,
+  Alert,
 } from './entities';
 
 /** Passed to TypeOrmModule.forRoot({ entities: ALL_ENTITIES }) and to the CLI DataSource. */
@@ -31,4 +32,5 @@ export const ALL_ENTITIES = [
   MessageAttempt,
   WebhookEvent,
   AuditLog,
+  Alert,
 ];

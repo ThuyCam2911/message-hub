@@ -16,7 +16,7 @@ import {
   AdvanceOn,
 } from '@message-hub/domain';
 import { ChannelAdapterRegistry, ParsedWebhookEvent, SendResult } from '@message-hub/adapters';
-import { EncryptionService, TemplateRenderer } from '@message-hub/shared';
+import { EncryptionService, RealtimeEventsPublisher, TemplateRenderer } from '@message-hub/shared';
 import { AttemptJobData, QUEUE_ATTEMPT, QUEUE_TIMEOUT_CHECK, TimeoutCheckJobData } from './queue-names';
 import { DEFAULT_TIMEOUT_SECONDS } from './default-timeouts';
 
@@ -44,6 +44,7 @@ export class FailoverEngineService {
     private readonly registry: ChannelAdapterRegistry,
     private readonly encryption: EncryptionService,
     private readonly renderer: TemplateRenderer,
+    private readonly realtime: RealtimeEventsPublisher,
   ) {}
 
   /** Entry point: called by the dispatch.processor when a new MessageRequest is created. */
@@ -53,6 +54,12 @@ export class FailoverEngineService {
       where: { failoverPolicyId: request.failoverPolicyId, stepOrder: 0 },
     });
     await this.requests.update(request.id, {
+      status: MessageRequestStatus.IN_PROGRESS,
+      currentStepOrder: firstStep.stepOrder,
+    });
+    await this.realtime.publish({
+      type: 'message-request-updated',
+      messageRequestId,
       status: MessageRequestStatus.IN_PROGRESS,
       currentStepOrder: firstStep.stepOrder,
     });
@@ -148,6 +155,12 @@ export class FailoverEngineService {
         statusUpdatedAt: new Date(),
       } as any);
       const attempt = await this.attempts.findOneByOrFail({ id: attemptId });
+      await this.realtime.publish({
+        type: 'message-attempt-updated',
+        messageRequestId: attempt.messageRequestId,
+        attemptId,
+        status: MessageAttemptStatus.PROVIDER_ERROR,
+      });
       await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, false, channelStrategyId);
       return;
     }
@@ -158,12 +171,18 @@ export class FailoverEngineService {
       providerResponse: result.rawResponse,
       sentAt: new Date(),
     } as any);
+    const sentAttempt = await this.attempts.findOneByOrFail({ id: attemptId });
+    await this.realtime.publish({
+      type: 'message-attempt-updated',
+      messageRequestId: sentAttempt.messageRequestId,
+      attemptId,
+      status: MessageAttemptStatus.SENT,
+    });
 
     if (step.advanceOn === AdvanceOn.PROVIDER_ERROR) {
       // No delivery confirmation is expected for this step — a successful
       // send() call is treated as final success immediately.
-      const attempt = await this.attempts.findOneByOrFail({ id: attemptId });
-      await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, true, channelStrategyId, attempt.id);
+      await this.advanceOrComplete(sentAttempt.messageRequestId, step.stepOrder, true, channelStrategyId, sentAttempt.id);
       return;
     }
 
@@ -187,6 +206,12 @@ export class FailoverEngineService {
       return; // already resolved by a webhook — no-op
     }
     await this.attempts.update(attempt.id, { status: MessageAttemptStatus.TIMED_OUT, statusUpdatedAt: new Date() });
+    await this.realtime.publish({
+      type: 'message-attempt-updated',
+      messageRequestId: attempt.messageRequestId,
+      attemptId: attempt.id,
+      status: MessageAttemptStatus.TIMED_OUT,
+    });
     const step = await this.steps.findOneByOrFail({ id: attempt.failoverPolicyStepId });
     await this.advanceOrComplete(attempt.messageRequestId, step.stepOrder, false, attempt.channelStrategyId);
   }
@@ -210,10 +235,17 @@ export class FailoverEngineService {
     }
 
     const succeeded = event.status === 'delivered' || event.status === 'read';
+    const resolvedStatus = succeeded ? MessageAttemptStatus.DELIVERED : MessageAttemptStatus.UNDELIVERED;
     await this.attempts.update(attempt.id, {
-      status: succeeded ? MessageAttemptStatus.DELIVERED : MessageAttemptStatus.UNDELIVERED,
+      status: resolvedStatus,
       errorCode: event.errorCode,
       statusUpdatedAt: new Date(),
+    });
+    await this.realtime.publish({
+      type: 'message-attempt-updated',
+      messageRequestId: attempt.messageRequestId,
+      attemptId: attempt.id,
+      status: resolvedStatus,
     });
 
     const step = await this.steps.findOneByOrFail({ id: attempt.failoverPolicyStepId });
@@ -247,6 +279,12 @@ export class FailoverEngineService {
         .execute();
       if ((result.affected ?? 0) > 0) {
         await this.supersedeStrayAttempts(messageRequestId, winningAttemptId);
+        await this.realtime.publish({
+          type: 'message-request-updated',
+          messageRequestId,
+          status: MessageRequestStatus.DELIVERED,
+          currentStepOrder: finishedStepOrder,
+        });
       }
       return;
     }
@@ -257,7 +295,7 @@ export class FailoverEngineService {
     });
 
     if (!nextStep) {
-      await this.requests
+      const result = await this.requests
         .createQueryBuilder()
         .update(MessageRequest)
         .set({ status: MessageRequestStatus.FAILED, completedAt: new Date() })
@@ -267,6 +305,14 @@ export class FailoverEngineService {
           step: finishedStepOrder,
         })
         .execute();
+      if ((result.affected ?? 0) > 0) {
+        await this.realtime.publish({
+          type: 'message-request-updated',
+          messageRequestId,
+          status: MessageRequestStatus.FAILED,
+          currentStepOrder: finishedStepOrder,
+        });
+      }
       return;
     }
 
@@ -282,6 +328,12 @@ export class FailoverEngineService {
       .execute();
 
     if ((result.affected ?? 0) > 0) {
+      await this.realtime.publish({
+        type: 'message-request-updated',
+        messageRequestId,
+        status: MessageRequestStatus.IN_PROGRESS,
+        currentStepOrder: nextStep.stepOrder,
+      });
       await this.attemptQueue.add('execute', { messageRequestId, stepOrder: nextStep.stepOrder });
     }
   }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { ChannelType } from '@message-hub/domain';
 import {
   AdapterConfigSchema,
@@ -12,6 +13,7 @@ import {
 interface WhatsAppChannelConfig {
   phoneNumberId: string;
   accessToken: string;
+  appSecret: string;
   graphApiVersion?: string;
 }
 
@@ -87,6 +89,24 @@ export class WhatsAppAdapter implements ChannelAdapter {
     };
   }
 
+  /**
+   * Meta signs every webhook POST body with HMAC-SHA256 keyed by the app
+   * secret, sent as `X-Hub-Signature-256: sha256=<hex>`. Must be computed
+   * over the exact raw bytes received, not a re-serialized copy of the
+   * parsed JSON (whitespace/key-order differences would break the digest).
+   */
+  verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string>, channelConfig: Record<string, unknown>): boolean {
+    const config = channelConfig as unknown as WhatsAppChannelConfig;
+    const header = headers['x-hub-signature-256'];
+    if (!header || !config.appSecret) return false;
+
+    const expected = `sha256=${createHmac('sha256', config.appSecret).update(rawBody).digest('hex')}`;
+    const expectedBuf = Buffer.from(expected);
+    const actualBuf = Buffer.from(header);
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return timingSafeEqual(expectedBuf, actualBuf);
+  }
+
   async validateConfig(channelConfig: Record<string, unknown>): Promise<{ valid: boolean; error?: string }> {
     const config = channelConfig as unknown as WhatsAppChannelConfig;
     if (!config.phoneNumberId || !config.accessToken) {
@@ -109,9 +129,10 @@ export class WhatsAppAdapter implements ChannelAdapter {
       properties: {
         phoneNumberId: { type: 'string', title: 'Phone Number ID' },
         accessToken: { type: 'string', title: 'Access Token', secret: true },
+        appSecret: { type: 'string', title: 'App Secret (for webhook signature verification)', secret: true },
         graphApiVersion: { type: 'string', title: 'Graph API Version (default v20.0)' },
       },
-      required: ['phoneNumberId', 'accessToken'],
+      required: ['phoneNumberId', 'accessToken', 'appSecret'],
     };
   }
 }

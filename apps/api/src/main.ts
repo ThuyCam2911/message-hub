@@ -7,7 +7,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true keeps req.rawBody available alongside normal JSON parsing —
+  // needed to verify Meta's X-Hub-Signature-256 HMAC over the exact bytes sent.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.enableCors();
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   const port = process.env.API_PORT ?? 3001;

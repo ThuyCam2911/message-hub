@@ -72,4 +72,14 @@ export interface ChannelAdapter {
   validateConfig(channelConfig: Record<string, unknown>): Promise<{ valid: boolean; error?: string }>;
 
   getConfigSchema(): AdapterConfigSchema;
+
+  /**
+   * Optional provider-specific webhook signature check (e.g. Meta's
+   * X-Hub-Signature-256 HMAC). rawBody is the exact bytes received, required
+   * because signatures are computed over the raw payload, not the
+   * re-serialized JSON. Adapters without a webhook signature scheme omit
+   * this — the webhook controller then treats the request as unauthenticated
+   * and the caller decides whether that's acceptable (e.g. mock's is fine).
+   */
+  verifyWebhookSignature?(rawBody: Buffer, headers: Record<string, string>, channelConfig: Record<string, unknown>): boolean;
 }
