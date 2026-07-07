@@ -48,7 +48,11 @@ interface MutationOutcome {
 
 type ConfigValues = Record<string, string | boolean>;
 
-const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email', 'mock'];
+// 'mock' is intentionally left out — it's a fake test-only provider with no
+// real send capability, so it shouldn't be offered when creating new
+// channels (existing mock channels from earlier testing can still be
+// managed/removed via the "Hiện channel test/mock" toggle below).
+const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email'];
 
 const CHANNEL_ICONS: Record<string, string> = {
   zbs: '🎫',
@@ -132,7 +136,7 @@ function ConfigFieldsForm({
         const inputType = prop.type === 'number' ? 'number' : prop.secret ? 'password' : 'text';
 
         return (
-          <label key={key}>
+          <label key={key} style={isMultiline ? { gridColumn: '1 / -1' } : undefined}>
             {label}
             {isMultiline ? (
               <textarea
@@ -167,10 +171,11 @@ export default function ChannelsPage() {
   const [adapters, setAdapters] = useState<AdapterInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [channelType, setChannelType] = useState('mock');
+  const [channelType, setChannelType] = useState('email');
   const [name, setName] = useState('');
-  const [provider, setProvider] = useState('mock');
+  const [provider, setProvider] = useState('');
   const [configValues, setConfigValues] = useState<ConfigValues>({});
+  const [showTestChannels, setShowTestChannels] = useState(false);
 
   const [strategyKeyByChannel, setStrategyKeyByChannel] = useState<Record<string, string>>({});
   const [strategyConfigValuesByChannel, setStrategyConfigValuesByChannel] = useState<Record<string, ConfigValues>>({});
@@ -201,6 +206,9 @@ export default function ChannelsPage() {
   }, []);
 
   const channelTypeSchema = mergeSchemasForChannelType(channelType, adapters);
+  const visibleChannels = showTestChannels
+    ? channels
+    : channels.filter((c) => c.channelType !== 'mock' && c.isActive);
 
   async function createChannel(e: React.FormEvent) {
     e.preventDefault();
@@ -216,10 +224,10 @@ export default function ChannelsPage() {
     }
   }
 
-  async function addStrategy(channelId: string) {
+  async function addStrategy(channelId: string, fallbackStrategyKey?: string) {
     setError(null);
     try {
-      const strategyKey = strategyKeyByChannel[channelId] ?? adapters[0]?.strategyKey;
+      const strategyKey = strategyKeyByChannel[channelId] ?? fallbackStrategyKey;
       const adapter = adapters.find((a) => a.strategyKey === strategyKey);
       const values = strategyConfigValuesByChannel[channelId] ?? {};
       const config = adapter ? buildConfigPayload(adapter.configSchema, values) : {};
@@ -281,6 +289,30 @@ export default function ChannelsPage() {
     }
   }
 
+  // 'mock' channels only ever existed to test the failover engine — one
+  // click clears out all of them instead of deleting each by hand.
+  async function cleanupMockChannels() {
+    const mockChannels = channels.filter((c) => c.channelType === 'mock');
+    if (mockChannels.length === 0) return;
+    if (!confirm(`Xoá ${mockChannels.length} channel test/mock? Cái nào đang được dùng trong policy sẽ chuyển Inactive thay vì xoá hẳn.`)) {
+      return;
+    }
+    setError(null);
+    let deletedCount = 0;
+    let deactivatedCount = 0;
+    for (const c of mockChannels) {
+      try {
+        const result = await api.delete<MutationOutcome>(`/channels/${c.id}`);
+        if (result.deleted) deletedCount++;
+        else deactivatedCount++;
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    }
+    alert(`Đã xoá ${deletedCount} channel${deactivatedCount > 0 ? `, chuyển ${deactivatedCount} channel sang Inactive (đang được dùng trong policy)` : ''}.`);
+    await load();
+  }
+
   function startEditStrategy(channelId: string, s: StrategyView) {
     setEditingStrategyRowKey(`${channelId}:${s.id}`);
     setEditStrategyActive(s.isActive);
@@ -326,52 +358,55 @@ export default function ChannelsPage() {
       {canManage && (
         <>
           <h2>Add a channel</h2>
-          <form onSubmit={createChannel}>
-            <label>
-              Channel type
-              <select
-                value={channelType}
-                onChange={(e) => {
-                  setChannelType(e.target.value);
-                  setConfigValues({});
-                }}
-              >
-                {CHANNEL_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Zalo OA - Marketing" required />
-            </label>
-            <label>
-              Provider
-              <input value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="e.g. mock, smtp, esms" required />
-            </label>
+          <form onSubmit={createChannel} style={{ maxWidth: 860 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+              <label>
+                Channel type
+                <select
+                  value={channelType}
+                  onChange={(e) => {
+                    setChannelType(e.target.value);
+                    setConfigValues({});
+                  }}
+                >
+                  {CHANNEL_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Name
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Zalo OA - Marketing" required />
+              </label>
+              <label>
+                Provider
+                <input value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="e.g. smtp, esms, meta" required />
+              </label>
+            </div>
 
             <div
               style={{
-                marginTop: '0.4rem',
+                marginTop: '0.85rem',
                 padding: '0.75rem',
                 background: 'var(--bg)',
                 border: '1px solid var(--border)',
                 borderRadius: 8,
-                display: 'flex',
-                flexDirection: 'column',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                 gap: '0.65rem',
+                alignItems: 'start',
               }}
             >
-              <strong style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <strong style={{ fontSize: '0.8rem', color: 'var(--text-muted)', gridColumn: '1 / -1' }}>
                 Thông tin cấu hình cho &quot;{channelType}&quot;
               </strong>
               {channelType === 'email' && (
                 <button
                   type="button"
                   className="secondary"
-                  style={{ alignSelf: 'flex-start' }}
+                  style={{ justifySelf: 'flex-start', gridColumn: '1 / -1' }}
                   onClick={() => setConfigValues({ ...configValues, host: 'smtp.gmail.com', port: '587', secure: false })}
                 >
                   Dùng Gmail (điền sẵn Host/Port)
@@ -391,11 +426,28 @@ export default function ChannelsPage() {
         </>
       )}
 
-      <h2>Configured channels</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
+        <h2 style={{ margin: 0 }}>Configured channels</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+          <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.35rem', fontWeight: 400 }}>
+            <input type="checkbox" checked={showTestChannels} onChange={(e) => setShowTestChannels(e.target.checked)} />
+            Hiện cả channel test/mock &amp; đã tắt
+          </label>
+          {canManage && channels.some((c) => c.channelType === 'mock') && (
+            <button type="button" className="secondary" onClick={cleanupMockChannels}>
+              Dọn dẹp channel mock
+            </button>
+          )}
+        </div>
+      </div>
       {channels.length === 0 && <p className="muted">Chưa có channel nào. Tạo channel đầu tiên ở form phía trên.</p>}
-      {channels.map((c) => {
-        const selectedStrategyKey = strategyKeyByChannel[c.id] ?? adapters[0]?.strategyKey;
-        const selectedAdapter = adapters.find((a) => a.strategyKey === selectedStrategyKey);
+      {channels.length > 0 && visibleChannels.length === 0 && (
+        <p className="muted">Không có channel nào để hiển thị — bật &quot;Hiện cả channel test/mock &amp; đã tắt&quot; để xem.</p>
+      )}
+      {visibleChannels.map((c) => {
+        const strategyOptions = adapters.filter((a) => a.channelType === c.channelType);
+        const selectedStrategyKey = strategyKeyByChannel[c.id] ?? strategyOptions[0]?.strategyKey;
+        const selectedAdapter = strategyOptions.find((a) => a.strategyKey === selectedStrategyKey);
         const isEditingChannel = editingChannelId === c.id;
 
         return (
@@ -439,45 +491,53 @@ export default function ChannelsPage() {
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
                   borderRadius: 8,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.6rem',
                 }}
               >
-                <label>
-                  Name
-                  <input value={editName} onChange={(e) => setEditName(e.target.value)} required />
-                </label>
-                <label>
-                  Provider
-                  <input value={editProvider} onChange={(e) => setEditProvider(e.target.value)} required />
-                </label>
-                <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.45rem' }}>
-                  <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
-                  Active
-                </label>
-                <span className="muted" style={{ fontSize: '0.76rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.6rem' }}>
+                  <label>
+                    Name
+                    <input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+                  </label>
+                  <label>
+                    Provider
+                    <input value={editProvider} onChange={(e) => setEditProvider(e.target.value)} required />
+                  </label>
+                  <label style={{ flexDirection: 'row', alignItems: 'center', gap: '0.45rem', justifyContent: 'flex-start' }}>
+                    <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} />
+                    Active
+                  </label>
+                </div>
+                <span className="muted" style={{ fontSize: '0.76rem', display: 'block', margin: '0.6rem 0' }}>
                   Chỉ điền field cấu hình muốn đổi — để trống sẽ giữ nguyên giá trị hiện tại.
                 </span>
-                {c.channelType === 'email' && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={() =>
-                      setEditConfigValues({ ...editConfigValues, host: 'smtp.gmail.com', port: '587', secure: false })
-                    }
-                  >
-                    Dùng Gmail (điền sẵn Host/Port)
-                  </button>
-                )}
-                <ConfigFieldsForm
-                  schema={mergeSchemasForChannelType(c.channelType, adapters)}
-                  values={editConfigValues}
-                  onChange={(key, value) => setEditConfigValues({ ...editConfigValues, [key]: value })}
-                  markRequired={false}
-                />
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '0.6rem',
+                    alignItems: 'start',
+                  }}
+                >
+                  {c.channelType === 'email' && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{ justifySelf: 'flex-start', gridColumn: '1 / -1' }}
+                      onClick={() =>
+                        setEditConfigValues({ ...editConfigValues, host: 'smtp.gmail.com', port: '587', secure: false })
+                      }
+                    >
+                      Dùng Gmail (điền sẵn Host/Port)
+                    </button>
+                  )}
+                  <ConfigFieldsForm
+                    schema={mergeSchemasForChannelType(c.channelType, adapters)}
+                    values={editConfigValues}
+                    onChange={(key, value) => setEditConfigValues({ ...editConfigValues, [key]: value })}
+                    markRequired={false}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
                   <button type="button" onClick={() => saveEditChannel(c)}>
                     Save
                   </button>
@@ -592,7 +652,7 @@ export default function ChannelsPage() {
               </div>
             )}
 
-            {canManage && (
+            {canManage && strategyOptions.length > 0 && (
               <div
                 style={{
                   display: 'flex',
@@ -615,7 +675,7 @@ export default function ChannelsPage() {
                       setStrategyConfigValuesByChannel({ ...strategyConfigValuesByChannel, [c.id]: {} });
                     }}
                   >
-                    {adapters.map((a) => (
+                    {strategyOptions.map((a) => (
                       <option key={a.strategyKey} value={a.strategyKey}>
                         {a.strategyKey}
                       </option>
@@ -642,7 +702,7 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
-                <button type="button" onClick={() => addStrategy(c.id)}>
+                <button type="button" onClick={() => addStrategy(c.id, strategyOptions[0]?.strategyKey)}>
                   Add
                 </button>
               </div>
