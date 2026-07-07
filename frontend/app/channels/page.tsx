@@ -367,6 +367,16 @@ export default function ChannelsPage() {
               <strong style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Thông tin cấu hình cho &quot;{channelType}&quot;
               </strong>
+              {channelType === 'email' && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ alignSelf: 'flex-start' }}
+                  onClick={() => setConfigValues({ ...configValues, host: 'smtp.gmail.com', port: '587', secure: false })}
+                >
+                  Dùng Gmail (điền sẵn Host/Port)
+                </button>
+              )}
               <ConfigFieldsForm
                 schema={channelTypeSchema}
                 values={configValues}
@@ -449,6 +459,18 @@ export default function ChannelsPage() {
                 <span className="muted" style={{ fontSize: '0.76rem' }}>
                   Chỉ điền field cấu hình muốn đổi — để trống sẽ giữ nguyên giá trị hiện tại.
                 </span>
+                {c.channelType === 'email' && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={() =>
+                      setEditConfigValues({ ...editConfigValues, host: 'smtp.gmail.com', port: '587', secure: false })
+                    }
+                  >
+                    Dùng Gmail (điền sẵn Host/Port)
+                  </button>
+                )}
                 <ConfigFieldsForm
                   schema={mergeSchemasForChannelType(c.channelType, adapters)}
                   values={editConfigValues}
