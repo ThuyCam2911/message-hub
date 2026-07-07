@@ -6,7 +6,7 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "build": "nest build",
-    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/data-source.ts"
+    "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts"
   },
   "dependencies": {
     "@message-hub/adapters": "*",
@@ -20,6 +20,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^10.4.0",
     "@nestjs/platform-socket.io": "^10.4.22",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^10.0.2",
     "@nestjs/websockets": "^10.4.22",
     "bcryptjs": "^3.0.3",

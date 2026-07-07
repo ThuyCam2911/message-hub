@@ -8,7 +8,7 @@ import { RealtimeEventsSubscriber } from '@message-hub/shared';
  * runs in the separate worker process) to connected dashboard clients over
  * Socket.IO, so the Messages page updates live instead of only polling.
  */
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL ?? 'http://localhost:3000' } })
 export class RealtimeGateway implements OnModuleInit {
   @WebSocketServer()
   server!: Server;

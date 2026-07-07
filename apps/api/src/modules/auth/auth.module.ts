@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersService } from './users.service';
 import { JwtStrategy } from './jwt.strategy';
+import { getJwtSecret } from '../../config/jwt.config';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { JwtStrategy } from './jwt.strategy';
     OrganizationsModule,
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'change-me-in-production',
+      secret: getJwtSecret(),
       signOptions: { expiresIn: '12h' },
     }),
   ],

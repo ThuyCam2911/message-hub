@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { getDatabaseConfig } from './config/database.config';
 import { getBullConnection } from './config/bullmq.config';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -21,6 +23,9 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
   imports: [
     TypeOrmModule.forRoot(getDatabaseConfig()),
     BullModule.forRoot({ connection: getBullConnection() }),
+    // Generous global default so normal dashboard usage never hits it;
+    // /auth/login overrides this with a much stricter limit (see its @Throttle).
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
     OrganizationsModule,
     AuthModule,
     AuditLogModule,
@@ -35,5 +40,6 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
     AlertsModule,
     CampaignsModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

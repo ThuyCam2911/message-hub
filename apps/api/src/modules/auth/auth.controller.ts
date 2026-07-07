@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UserRole } from '@message-hub/domain';
 import { AuthService } from './auth.service';
 import { UsersService } from './users.service';
@@ -16,6 +17,9 @@ export class AuthController {
     private readonly users: UsersService,
   ) {}
 
+  // Stricter than the global default — login is the one endpoint an
+  // unauthenticated attacker can hammer to brute-force a password.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
