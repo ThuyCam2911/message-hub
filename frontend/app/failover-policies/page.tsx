@@ -76,7 +76,7 @@ function SortableStepRow({
         <span
           {...attributes}
           {...listeners}
-          style={{ cursor: 'grab', color: '#9aa4b2', fontSize: '1.1rem', userSelect: 'none' }}
+          style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: '1.1rem', userSelect: 'none' }}
           title="Kéo để đổi thứ tự"
         >
           ⠿

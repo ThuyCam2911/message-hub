@@ -52,7 +52,7 @@ export default function HomePage() {
           </div>
           <div className="gz-stat-card">
             <span className="muted">Delivered</span>
-            <div className="value" style={{ color: 'var(--gz-green-light)' }}>
+            <div className="value" style={{ color: 'var(--gz-green-dark)' }}>
               {summary.delivered}
             </div>
           </div>

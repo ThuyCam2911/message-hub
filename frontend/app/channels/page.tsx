@@ -23,6 +23,16 @@ interface ChannelView {
 
 const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email', 'mock'];
 
+const CHANNEL_ICONS: Record<string, string> = {
+  zbs: '🎫',
+  sms: '💬',
+  telegram: '✈️',
+  line: '💚',
+  whatsapp: '📞',
+  email: '✉️',
+  mock: '🧪',
+};
+
 export default function ChannelsPage() {
   const [channels, setChannels] = useState<ChannelView[]>([]);
   const [adapters, setAdapters] = useState<AdapterInfo[]>([]);
@@ -132,28 +142,74 @@ export default function ChannelsPage() {
       )}
 
       <h2>Configured channels</h2>
+      {channels.length === 0 && <p className="muted">Chưa có channel nào. Tạo channel đầu tiên ở form phía trên.</p>}
       {channels.map((c) => (
         <div className="card" key={c.id}>
-          <strong>{c.name}</strong> <span className="muted">({c.channelType} / {c.provider})</span>
-          <div className="muted">config preview: {c.configPreview || '(none)'}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '1.3rem' }}>{CHANNEL_ICONS[c.channelType] ?? '📡'}</span>
+              <div>
+                <strong>{c.name}</strong>{' '}
+                <span className="muted">
+                  {c.channelType} · {c.provider}
+                </span>
+              </div>
+            </div>
+            <span className={`badge ${c.isActive ? 'badge-active' : 'badge-inactive'}`}>
+              {c.isActive ? 'Active' : 'Inactive'}
+            </span>
+          </div>
 
-          <h3 style={{ fontSize: '0.9rem', marginTop: '0.75rem' }}>Strategies</h3>
-          {c.strategies.length === 0 && <p className="muted">No strategies yet.</p>}
-          <ul>
-            {c.strategies.map((s) => (
-              <li key={s.id}>
-                {s.strategyKey}{' '}
-                {canManage && (
-                  <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
-                    Test connection
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+          <div className="muted" style={{ marginTop: '0.5rem' }}>
+            Config: <code className="gz-code-block" style={{ padding: '0.1rem 0.4rem' }}>{c.configPreview || '(none)'}</code>
+          </div>
+
+          <hr className="gz-section-divider" />
+
+          <h3 style={{ fontSize: '0.85rem', margin: '0 0 0.5rem', color: 'var(--text-muted)' }}>
+            Strategies {c.strategies.length > 0 && `(${c.strategies.length})`}
+          </h3>
+          {c.strategies.length === 0 && <p className="muted">Chưa có strategy nào.</p>}
+          {c.strategies.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.5rem' }}>
+              {c.strategies.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'var(--surface-hover)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: '0.45rem 0.7rem',
+                  }}
+                >
+                  <span style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{s.strategyKey}</span>
+                  {canManage && (
+                    <button type="button" className="secondary" onClick={() => testConnection(s.id)}>
+                      Test connection
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {canManage && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginTop: '0.5rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                alignItems: 'flex-end',
+                flexWrap: 'wrap',
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                background: 'var(--bg)',
+                border: '1px dashed var(--border-strong)',
+                borderRadius: 8,
+              }}
+            >
               <label>
                 Add strategy
                 <select

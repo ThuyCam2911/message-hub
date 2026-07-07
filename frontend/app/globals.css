@@ -1,6 +1,7 @@
 :root {
   /* GiftZone brand palette (sampled from official logo assets) */
   --gz-green: #0aad64;
+  --gz-green-dark: #067647; /* for text on light backgrounds — --gz-green itself is too bright to read well */
   --gz-green-light: #a9ea7e;
   --gz-orange: #ff6900;
   --gz-amber: #ffa700;
@@ -8,24 +9,28 @@
   --gz-gradient-green: linear-gradient(120deg, var(--gz-green), var(--gz-green-light));
   --gz-gradient-orange: linear-gradient(120deg, var(--gz-orange), var(--gz-amber));
 
-  --bg: #0a0c11;
-  --bg-elevated: #12151c;
-  --surface: #151924;
-  --surface-hover: #1b202c;
-  --border: #262b38;
-  --border-strong: #333a4a;
-  --text: #eef0f4;
-  --text-muted: #93a0b4;
-  --text-faint: #5c6577;
-  --danger: #f87171;
-  --danger-bg: #3a1414;
-  --warning: #facc15;
-  --warning-bg: #3a3312;
+  /* Light theme surfaces: a barely-off-white canvas with pure-white cards
+     floating slightly above it (shadow + border), so content has depth
+     without needing a dark background. */
+  --bg: #f6f7fb;
+  --bg-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f2f4f8;
+  --border: #e3e6ed;
+  --border-strong: #cdd2dd;
+  --text: #171a21;
+  --text-muted: #667085;
+  --text-faint: #98a2b3;
+
+  --danger: #d92d20;
+  --danger-bg: #fef3f2;
+  --warning: #b54708;
+  --warning-bg: #fffaeb;
 
   --radius: 10px;
   --radius-lg: 14px;
-  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.25);
-  --shadow-glow-orange: 0 4px 16px rgba(255, 105, 0, 0.28);
+  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.07);
+  --shadow-glow-orange: 0 4px 14px rgba(255, 105, 0, 0.25);
 }
 
 * {
@@ -41,8 +46,8 @@ body {
 body {
   font-family: var(--font-sans, -apple-system), BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background:
-    radial-gradient(1100px 480px at 12% -10%, rgba(10, 173, 100, 0.10), transparent 60%),
-    radial-gradient(900px 460px at 92% 0%, rgba(255, 105, 0, 0.10), transparent 55%),
+    radial-gradient(1100px 480px at 12% -10%, rgba(10, 173, 100, 0.06), transparent 60%),
+    radial-gradient(900px 460px at 92% 0%, rgba(255, 105, 0, 0.07), transparent 55%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -50,7 +55,7 @@ body {
 }
 
 ::selection {
-  background: rgba(255, 105, 0, 0.28);
+  background: rgba(255, 105, 0, 0.2);
 }
 
 ::-webkit-scrollbar {
@@ -71,7 +76,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(18, 21, 28, 0.85);
+  background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
@@ -120,7 +125,7 @@ nav a:hover {
 }
 
 nav a.active {
-  color: #fff;
+  color: var(--gz-orange);
   background: var(--surface-hover);
   box-shadow: inset 0 -2px 0 var(--gz-orange);
 }
@@ -137,7 +142,7 @@ nav a.active {
   font-size: 0.8rem;
   padding: 0.3rem 0.7rem 0.3rem 0.3rem;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--surface-hover);
   border: 1px solid var(--border);
 }
 
@@ -179,6 +184,7 @@ h1 {
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0 0 0.35rem;
+  color: var(--text);
 }
 
 h2 {
@@ -186,10 +192,15 @@ h2 {
   font-weight: 600;
   margin: 2rem 0 0.85rem;
   letter-spacing: -0.005em;
+  color: var(--text);
 }
 
 h2:first-of-type {
   margin-top: 1.25rem;
+}
+
+h3 {
+  color: var(--text);
 }
 
 /* ---------- Tables ---------- */
@@ -198,6 +209,10 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 th,
@@ -213,6 +228,7 @@ th {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  background: var(--surface-hover);
 }
 
 tbody tr {
@@ -223,6 +239,10 @@ tbody tr:hover {
   background: var(--surface-hover);
 }
 
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ---------- Forms ---------- */
 
 form {
@@ -230,16 +250,17 @@ form {
   flex-direction: column;
   gap: 0.75rem;
   max-width: 480px;
-  background: linear-gradient(180deg, var(--surface), var(--bg-elevated));
+  background: var(--surface);
   padding: 1.25rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
 }
 
 label {
   font-size: 0.78rem;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 600;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -248,7 +269,7 @@ label {
 input,
 select,
 textarea {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border-strong);
   color: var(--text);
   padding: 0.55rem 0.7rem;
@@ -258,16 +279,25 @@ textarea {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--gz-green);
-  box-shadow: 0 0 0 3px rgba(10, 173, 100, 0.18);
+  box-shadow: 0 0 0 3px rgba(10, 173, 100, 0.14);
 }
 
 input[type='file'] {
   padding: 0.4rem;
+}
+
+input[type='checkbox'] {
+  width: auto;
 }
 
 /* ---------- Buttons ---------- */
@@ -287,7 +317,7 @@ button {
 }
 
 button:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.04);
   transform: translateY(-1px);
 }
 
@@ -323,7 +353,8 @@ button.secondary:hover {
   border-radius: var(--radius-lg);
   padding: 1rem 1.15rem;
   margin-bottom: 0.85rem;
-  transition: border-color 0.15s ease;
+  box-shadow: var(--shadow-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .card:hover {
@@ -343,8 +374,8 @@ button.secondary:hover {
 }
 
 .badge-delivered {
-  background: rgba(10, 173, 100, 0.16);
-  color: var(--gz-green-light);
+  background: #ecfdf3;
+  color: var(--gz-green-dark);
 }
 
 .badge-failed,
@@ -366,6 +397,16 @@ button.secondary:hover {
 .badge-superseded {
   background: var(--surface-hover);
   color: var(--text-muted);
+}
+
+.badge-active {
+  background: #ecfdf3;
+  color: var(--gz-green-dark);
+}
+
+.badge-inactive {
+  background: var(--surface-hover);
+  color: var(--text-faint);
 }
 
 /* ---------- Utility ---------- */
@@ -398,10 +439,11 @@ button.secondary:hover {
 }
 
 .gz-stat-card {
-  background: linear-gradient(160deg, var(--surface), var(--bg-elevated));
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.2rem;
+  box-shadow: var(--shadow-soft);
 }
 
 .gz-stat-card .value {
@@ -409,6 +451,7 @@ button.secondary:hover {
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-top: 0.25rem;
+  color: var(--text);
 }
 
 .gz-hero {
@@ -422,4 +465,21 @@ button.secondary:hover {
 .gz-hero img {
   height: 42px;
   width: auto;
+}
+
+.gz-code-block {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  font-family: 'SF Mono', ui-monospace, 'Courier New', monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+
+.gz-section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.9rem 0;
 }

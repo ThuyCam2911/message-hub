@@ -83,15 +83,15 @@ export default function AnalyticsPage() {
           </div>
           <div>
             <div className="muted">Delivered</div>
-            <strong style={{ fontSize: '1.4rem', color: '#4ade80' }}>{summary.delivered}</strong>
+            <strong style={{ fontSize: '1.4rem', color: 'var(--gz-green-dark)' }}>{summary.delivered}</strong>
           </div>
           <div>
             <div className="muted">Failed</div>
-            <strong style={{ fontSize: '1.4rem', color: '#f87171' }}>{summary.failed}</strong>
+            <strong style={{ fontSize: '1.4rem', color: 'var(--danger)' }}>{summary.failed}</strong>
           </div>
           <div>
             <div className="muted">In progress</div>
-            <strong style={{ fontSize: '1.4rem', color: '#facc15' }}>{summary.inProgress}</strong>
+            <strong style={{ fontSize: '1.4rem', color: 'var(--warning)' }}>{summary.inProgress}</strong>
           </div>
           <div>
             <div className="muted">Chain-reach rate (% cần failover)</div>

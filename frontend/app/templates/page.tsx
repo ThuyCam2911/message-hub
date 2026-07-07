@@ -203,7 +203,7 @@ export default function TemplatesPage() {
                 Render
               </button>
               {previewResult != null && (
-                <pre style={{ background: '#0f1117', padding: '0.6rem', borderRadius: 6, marginTop: '0.5rem' }}>
+                <pre className="gz-code-block" style={{ marginTop: '0.5rem' }}>
                   {typeof previewResult === 'string' ? previewResult : JSON.stringify(previewResult, null, 2)}
                 </pre>
               )}
