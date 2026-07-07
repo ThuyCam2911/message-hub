@@ -3,7 +3,20 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { clearSession, getCurrentUser, getToken } from '../lib/auth';
+
+const NAV_LINKS = [
+  { href: '/', label: 'Home' },
+  { href: '/channels', label: 'Channels' },
+  { href: '/templates', label: 'Templates' },
+  { href: '/contacts', label: 'Contacts' },
+  { href: '/failover-policies', label: 'Failover Policies' },
+  { href: '/campaigns', label: 'Campaigns' },
+  { href: '/send-test', label: 'Send Test' },
+  { href: '/messages', label: 'Messages' },
+  { href: '/analytics', label: 'Analytics' },
+];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -38,24 +51,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <nav>
-        <Link href="/">Message Hub</Link>
-        <Link href="/channels">Channels</Link>
-        <Link href="/templates">Templates</Link>
-        <Link href="/contacts">Contacts</Link>
-        <Link href="/failover-policies">Failover Policies</Link>
-        <Link href="/campaigns">Campaigns</Link>
-        <Link href="/send-test">Send Test</Link>
-        <Link href="/messages">Messages</Link>
-        <Link href="/analytics">Analytics</Link>
-        {user?.role === 'admin' && <Link href="/audit-log">Audit Log</Link>}
-        <span style={{ marginLeft: 'auto', color: '#9aa4b2', fontSize: '0.85rem' }}>
-          {user?.email} ({user?.role})
-        </span>
-        <a href="#" onClick={(e) => { e.preventDefault(); logout(); }}>
-          Logout
-        </a>
-      </nav>
+      <header className="gz-topbar">
+        <div className="gz-topbar-accent" />
+        <nav>
+          <Link href="/" className="gz-logo">
+            <Image src="/brand/logo-mark.png" alt="GiftZone" width={120} height={26} priority />
+          </Link>
+          {NAV_LINKS.map((link) => (
+            <Link key={link.href} href={link.href} className={pathname === link.href ? 'active' : ''}>
+              {link.label}
+            </Link>
+          ))}
+          {user?.role === 'admin' && (
+            <Link href="/audit-log" className={pathname === '/audit-log' ? 'active' : ''}>
+              Audit Log
+            </Link>
+          )}
+          <span className="gz-nav-spacer" />
+          <span className="gz-user-chip">
+            <span className="gz-avatar">{user?.email?.[0]?.toUpperCase() ?? '?'}</span>
+            {user?.email} · {user?.role}
+          </span>
+          <a
+            href="#"
+            className="gz-logout"
+            onClick={(e) => {
+              e.preventDefault();
+              logout();
+            }}
+          >
+            Logout
+          </a>
+        </nav>
+      </header>
       {children}
     </>
   );
