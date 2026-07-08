@@ -108,6 +108,12 @@ export class ChannelsService {
   async addStrategy(channelId: string, dto: CreateChannelStrategyDto): Promise<ChannelStrategy> {
     await this.findOrThrow(channelId); // ensures channel exists + belongs to org
     this.registry.get(dto.strategyKey); // throws if unknown strategyKey
+    // strategyConfigOverride() resolves by (channelId, strategyKey) — a duplicate
+    // strategyKey on the same channel would make that lookup ambiguous.
+    const existing = await this.strategies.findOne({ where: { channelId, strategyKey: dto.strategyKey } });
+    if (existing) {
+      throw new BadRequestException(`Channel đã có strategy dùng "${dto.strategyKey}" rồi — sửa strategy đó thay vì thêm mới.`);
+    }
     return this.strategies.save(
       this.strategies.create({
         channelId,
@@ -189,6 +195,9 @@ export class ChannelsService {
       throw new BadRequestException('Channel chưa có access token — hãy cấu hình channel trước khi sync template');
     }
     const config = this.encryption.decrypt(channel.configEncrypted);
+    // Refresh operates on the pure channel-level config and writes back to
+    // channel.config_encrypted only (same as FailoverEngineService.refreshChannelCredentialsIfNeeded)
+    // — a strategy-level override, if any, is merged in afterwards for the actual call.
     if (adapter.refreshCredentials) {
       try {
         const refreshed = await adapter.refreshCredentials(config);
@@ -200,8 +209,9 @@ export class ChannelsService {
         // Non-fatal — fall through with the existing token and let the actual sync call below surface the real error.
       }
     }
+    const mergedConfig = { ...config, ...(await this.strategyConfigOverride(channel.id, adapter.strategyKey)) };
     try {
-      return await adapter.listTemplates(config);
+      return await adapter.listTemplates(mergedConfig);
     } catch (err) {
       throw new BadRequestException(`${adapter.strategyKey} API lỗi: ${(err as Error).message}`);
     }
@@ -223,8 +233,9 @@ export class ChannelsService {
       throw new BadRequestException('Channel chưa có cấu hình — hãy thiết lập channel trước khi submit template');
     }
     const config = this.encryption.decrypt(channel.configEncrypted);
+    const mergedConfig = { ...config, ...(await this.strategyConfigOverride(channel.id, adapter.strategyKey)) };
     try {
-      return await adapter.submitTemplate(config, template);
+      return await adapter.submitTemplate(mergedConfig, template);
     } catch (err) {
       throw new BadRequestException(`Submit template thất bại: ${(err as Error).message}`);
     }
@@ -244,11 +255,25 @@ export class ChannelsService {
       throw new BadRequestException('Channel chưa có cấu hình — hãy thiết lập channel trước khi tạo invite link');
     }
     const config = this.encryption.decrypt(channel.configEncrypted);
+    const mergedConfig = { ...config, ...(await this.strategyConfigOverride(channel.id, adapter.strategyKey)) };
     try {
-      return await adapter.getInviteLink(config, payload);
+      return await adapter.getInviteLink(mergedConfig, payload);
     } catch (err) {
       throw new BadRequestException(`Tạo invite link thất bại: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Same merge FailoverEngineService.executeStep and testStrategyConnection do —
+   * a channelType-resolved adapter capability (listTemplates/submitTemplate/getInviteLink)
+   * can still have a strategy-level config override sitting on the matching
+   * channel_strategy row (matched by strategyKey), and ignoring it here was the
+   * same bug class as the fixed send()-path one (see .claude/memory.md).
+   */
+  private async strategyConfigOverride(channelId: string, strategyKey: string): Promise<Record<string, unknown>> {
+    const strategy = await this.strategies.findOne({ where: { channelId, strategyKey } });
+    if (!strategy?.configEncrypted) return {};
+    return this.encryption.decrypt(strategy.configEncrypted);
   }
 
   /**

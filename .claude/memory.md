@@ -6,6 +6,13 @@ Quy tắc lặp lại (đã promote lên `.claude/rules/`) không ghi lại chi 
 
 ---
 
+### 2026-07-08 — Bug cùng loại "config merge" lan sang 3 chỗ khác (getInviteLink, listProviderTemplates, submitProviderTemplate)
+**What**: Dùng subagent `researcher` (mới tạo) audit lại toàn bộ call site gọi capability adapter (`listTemplates`, `submitTemplate`, `getInviteLink`) xem có bị bug "chỉ đọc channelConfig, quên merge strategyConfig" giống bug đã fix ở `executeStep`/`testStrategyConnection` không. Kết quả: **cả 3 hàm này đều bị**, và **đang live-manifest thật** với channel Telegram thật (`giftzone_message_bot`) — channel-level `botToken` (35 ký tự) khác strategy-level `botToken` (46 ký tự, cái thực sự dùng để gửi tin), nên nút "Tạo invite link" ở Contacts từng tạo link trỏ nhầm bot.
+**Why**: `findAdapterWithCapability` resolve adapter theo `channelType`, không qua 1 `channel_strategy` row cụ thể nên code gốc chỉ nghĩ tới `channel.config_encrypted`, quên rằng vẫn có strategy override khả dụng cần merge vào.
+**Fix**: thêm helper `strategyConfigOverride(channelId, strategyKey)` trong `channels.service.ts`, merge `{...channelConfig, ...strategyConfig}` ở cả 3 call site — dùng subagent `reviewer` (mới tạo) verify lại trước khi coi là xong; verify thêm bằng script disposable trong container so sánh fingerprint token (xem tech-defaults.md) — xác nhận merged config giờ đúng bằng strategy-level token.
+**Bonus fix**: `reviewer` phát hiện `strategyConfigOverride` match theo `(channelId, strategyKey)` không có ràng buộc unique trong DB — `addStrategy` trước đây cho phép thêm 2 strategy cùng `strategyKey` trên 1 channel (dữ liệu hiện tại chưa bị, nhưng là lỗ hổng tiềm ẩn). Đã thêm guard chặn trùng `strategyKey` trong `addStrategy` (application-level, không cần migration).
+**Rule rút ra**: khi fix 1 bug "quên merge config" ở 1 chỗ, phải audit **toàn bộ call site khác gọi cùng 1 adapter capability pattern** (`findAdapterWithCapability`) — bug lớp này rất dễ lặp lại ở chỗ khác vì cùng root cause kiến trúc (resolve theo channelType thay vì theo 1 strategy row cụ thể).
+
 ### 2026-07-08 — Audit toàn bộ active policy: tìm thấy 2 policy vẫn còn bug "advance_on sai" dù đã từng phát hiện trước đó
 **What**: Chạy audit theo `.claude/rules/tech-defaults.md` mục "Failover policy" trên toàn bộ `failover_policy_steps` đang active. Phát hiện policy **"Gmail"** (step 0, `email_smtp`) và **"ZBS"** (step 0 `zbs_uid` + step 1 `zbs_phone`) vẫn đang để `advance_on = 'either'` — dù bug pattern này đã được "phát hiện + hướng dẫn sửa" ở 1 session trước (ghi trong CLAUDE.md cũ) nhưng **chưa từng thực sự UPDATE trong DB**.
 **Why**: Phát hiện bug ≠ đã fix — session trước chỉ dừng ở mức giải thích cho user, không có bước áp dụng fix thật vào dữ liệu.
