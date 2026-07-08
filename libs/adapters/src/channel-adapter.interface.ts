@@ -92,6 +92,19 @@ export interface ChannelAdapter {
   listTemplates?(channelConfig: Record<string, unknown>): Promise<{ templateId: string; templateName: string; status: string }[]>;
 
   /**
+   * Optional: providers with a real "create template" API (e.g. WhatsApp
+   * Business/Meta) can push a newly-authored template up for approval here.
+   * Most channels have no such API — Zalo ZNS templates, for instance, can
+   * only be submitted through the zns.zalo.me web console, so ZbsPhoneAdapter
+   * intentionally does not implement this; callers must fall back to
+   * `listTemplates` (sync-only) for those.
+   */
+  submitTemplate?(
+    channelConfig: Record<string, unknown>,
+    template: { name: string; body: Record<string, unknown> | string; variables: string[] },
+  ): Promise<{ providerTemplateId: string; status: string }>;
+
+  /**
    * Optional provider-specific webhook signature check (e.g. Meta's
    * X-Hub-Signature-256 HMAC). rawBody is the exact bytes received, required
    * because signatures are computed over the raw payload, not the
@@ -100,4 +113,15 @@ export interface ChannelAdapter {
    * and the caller decides whether that's acceptable (e.g. mock's is fine).
    */
   verifyWebhookSignature?(rawBody: Buffer, headers: Record<string, string>, channelConfig: Record<string, unknown>): boolean;
+
+  /**
+   * Optional: providers that require the recipient to opt in before you can
+   * message them (Telegram bots, LINE Official Accounts) can build the
+   * "add me / start chat" link a contact needs to click — `payload` is
+   * opaque to the caller and round-trips back through the provider's opt-in
+   * webhook so the resulting identifier can be linked to the right contact.
+   * Channels without an opt-in model (SMS, email, Zalo ZNS by phone) have no
+   * use for this and omit it.
+   */
+  getInviteLink?(channelConfig: Record<string, unknown>, payload: string): Promise<string>;
 }

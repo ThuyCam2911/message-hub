@@ -54,4 +54,13 @@ export class ContactsController {
   addIdentifier(@Param('id') id: string, @Body() dto: AddIdentifierDto) {
     return this.contacts.addIdentifier(id, dto);
   }
+
+  // For channels with an opt-in model (Telegram, LINE) — the link this
+  // contact needs to click before the channel can message them.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  @Get(':id/invite-link/:channelId')
+  async getInviteLink(@Param('id') id: string, @Param('channelId') channelId: string) {
+    const url = await this.contacts.getInviteLink(id, channelId);
+    return { url };
+  }
 }

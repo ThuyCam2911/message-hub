@@ -75,6 +75,27 @@ export class ChannelsController {
     return this.channels.listZaloTemplates(id);
   }
 
+  // Generic sync (any channel whose adapter implements listTemplates) — used
+  // by the Templates page's per-channel "Sync" button.
+  @Get(':id/provider-templates')
+  listProviderTemplates(@Param('id') id: string) {
+    return this.channels.listProviderTemplates(id);
+  }
+
+  // Admin-only: reveals the channel/strategy's saved config (secrets masked
+  // to their last 4 chars) so the edit form can show what's already there.
+  @Roles(UserRole.ADMIN)
+  @Get(':id/config')
+  getConfigForEdit(@Param('id') id: string) {
+    return this.channels.getConfigForEdit(id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Get(':id/strategies/:strategyId/config')
+  getStrategyConfigForEdit(@Param('id') id: string, @Param('strategyId') strategyId: string) {
+    return this.channels.getStrategyConfigForEdit(id, strategyId);
+  }
+
   @Roles(UserRole.ADMIN)
   @Post(':id/strategies')
   async addStrategy(@Param('id') id: string, @Body() dto: CreateChannelStrategyDto, @CurrentUser() user: AuthenticatedUser) {

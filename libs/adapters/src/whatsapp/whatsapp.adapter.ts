@@ -15,6 +15,8 @@ interface WhatsAppChannelConfig {
   accessToken: string;
   appSecret: string;
   graphApiVersion?: string;
+  /** WhatsApp Business Account ID — only needed for submitTemplate (message_templates lives under the WABA, not the phone number). */
+  wabaId?: string;
 }
 
 /**
@@ -123,6 +125,57 @@ export class WhatsAppAdapter implements ChannelAdapter {
     }
   }
 
+  /**
+   * Meta's real "create template" API: POST /{waba-id}/message_templates.
+   * Unverified against a live WABA (none exists yet, see task #39) — built
+   * from Meta's public docs, so double-check the response shape once a real
+   * account is available. Meta requires numbered placeholders ({{1}}, {{2}},
+   * ...) inside the BODY component rather than named ones, so named
+   * {{variable}} tokens are rewritten to positional ones here in the order
+   * they first appear; `variables` (declared in template order) records
+   * which name each position corresponds to.
+   */
+  async submitTemplate(
+    channelConfig: Record<string, unknown>,
+    template: { name: string; body: Record<string, unknown> | string; variables: string[] },
+  ): Promise<{ providerTemplateId: string; status: string }> {
+    const config = channelConfig as unknown as WhatsAppChannelConfig;
+    if (!config.wabaId) {
+      throw new Error('wabaId (WhatsApp Business Account ID) is required to submit a template to Meta');
+    }
+    const version = config.graphApiVersion ?? 'v20.0';
+    const bodyText = typeof template.body === 'string' ? template.body : JSON.stringify(template.body);
+    // Only number variables that actually occur in the body — declaring an
+    // extra unused variable would otherwise consume a positional slot
+    // ({{2}}) with nothing left to fill it, breaking Meta's requirement that
+    // {{1}}, {{2}}, ... be sequential with no gaps.
+    const usedVariables = template.variables.filter((name) => bodyText.includes(`{{${name}}}`));
+    const positionalText = usedVariables.reduce(
+      (text, name, i) => text.split(`{{${name}}}`).join(`{{${i + 1}}}`),
+      bodyText,
+    );
+
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/${version}/${config.wabaId}/message_templates`,
+        {
+          name: template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+          language: 'vi',
+          category: 'UTILITY',
+          components: [{ type: 'BODY', text: positionalText }],
+        },
+        { headers: { Authorization: `Bearer ${config.accessToken}`, 'Content-Type': 'application/json' } },
+      );
+      return {
+        providerTemplateId: String(response.data?.id ?? ''),
+        status: String(response.data?.status ?? 'pending'),
+      };
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: { message?: string } } }; message: string };
+      throw new Error(error.response?.data?.error?.message ?? error.message);
+    }
+  }
+
   getConfigSchema(): AdapterConfigSchema {
     return {
       type: 'object',
@@ -131,6 +184,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
         accessToken: { type: 'string', title: 'Access Token', secret: true },
         appSecret: { type: 'string', title: 'App Secret (for webhook signature verification)', secret: true },
         graphApiVersion: { type: 'string', title: 'Graph API Version (default v20.0)' },
+        wabaId: { type: 'string', title: 'WhatsApp Business Account ID', description: 'Cần để submit template mới lên Meta duyệt.' },
       },
       required: ['phoneNumberId', 'accessToken', 'appSecret'],
     };

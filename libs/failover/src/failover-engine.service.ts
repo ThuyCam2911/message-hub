@@ -112,8 +112,19 @@ export class FailoverEngineService {
     const adapter = this.registry.get(strategy.strategyKey);
     const channelConfig = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
     const strategyConfig = strategy.configEncrypted ? this.encryption.decrypt(strategy.configEncrypted) : {};
+    // Refresh/persist happens on the pure channel-level config only — it's
+    // what gets written back to channels.config_encrypted, and strategy
+    // overrides have no business ending up there.
     await this.refreshChannelCredentialsIfNeeded(adapter, channel, channelConfig);
     const renderedBody = this.renderer.render(template.body, request.templateVariables);
+
+    // Almost every adapter reads only `channelConfig` (see SendInput),
+    // trusting it to already be "the config to use" — so the merge with
+    // strategy-level overrides has to happen here, once, rather than inside
+    // each adapter. Without this, the "override riêng cho strategy này"
+    // field in the UI is silently ignored by every adapter except the ones
+    // that happen to read strategyConfig by hand (mock, sms_http).
+    const mergedConfig = { ...channelConfig, ...strategyConfig };
 
     let result: SendResult;
     try {
@@ -121,7 +132,7 @@ export class FailoverEngineService {
         recipientIdentifier: identifier.value,
         templateBody: renderedBody,
         variables: request.templateVariables,
-        channelConfig,
+        channelConfig: mergedConfig,
         strategyConfig,
         idempotencyKey: attempt.id,
       });

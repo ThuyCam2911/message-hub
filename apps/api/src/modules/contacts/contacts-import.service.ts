@@ -21,6 +21,9 @@ const IDENTIFIER_COLUMNS: Record<string, { channelType: ChannelType; identifierK
   line_user_id: { channelType: ChannelType.LINE, identifierKind: 'user_id' },
 };
 
+/** Columns consumed elsewhere in a row — everything else becomes a template variable via contact.attributes. */
+const RESERVED_COLUMNS = new Set(['displayName', 'externalRef', ...Object.keys(IDENTIFIER_COLUMNS)]);
+
 export interface ImportRowError {
   row: number;
   message: string;
@@ -73,13 +76,25 @@ export class ContactsImportService {
         continue;
       }
 
+      // Any CSV column that isn't displayName/externalRef/an identifier
+      // column is a free-form attribute (e.g. "hocphi", "voucher_code") —
+      // campaigns pass contact.attributes straight through as
+      // templateVariables, so a column named `hocphi` here automatically
+      // fills a `{{hocphi}}` placeholder in the template with no extra
+      // mapping step required.
+      const attributes: Record<string, string> = {};
+      for (const [column, value] of Object.entries(row)) {
+        if (RESERVED_COLUMNS.has(column) || !value?.trim()) continue;
+        attributes[column] = value.trim();
+      }
+
       try {
         const contact = await this.contacts.save(
           this.contacts.create({
             organizationId,
             displayName: row.displayName.trim(),
             externalRef: row.externalRef?.trim() || undefined,
-            attributes: {},
+            attributes,
           }),
         );
         for (const entry of identifierEntries) {

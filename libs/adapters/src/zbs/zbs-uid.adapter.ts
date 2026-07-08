@@ -75,11 +75,40 @@ export class ZbsUidAdapter implements ChannelAdapter {
     return null;
   }
 
+  /**
+   * Unlike Telegram's `/start <payload>` deep link, Zalo has no confirmed
+   * mechanism to pass a custom referral value through a "Follow OA" link
+   * that gets echoed back on the OA's webhook — so `payload` is unused here
+   * and the returned link is just the OA's follow page. ZbsWebhookController
+   * links a contact by matching the *text* of their first message to the
+   * OA instead (ask them to send their contact id, shown alongside this
+   * link in the UI) rather than relying on an unverified follow-payload
+   * passthrough.
+   */
+  async getInviteLink(channelConfig: Record<string, unknown>): Promise<string> {
+    const config = channelConfig as unknown as ZaloOaChannelConfig;
+    let response;
+    try {
+      response = await axios.get('https://openapi.zalo.me/v2.0/oa/getoa', {
+        headers: { access_token: config.accessToken },
+      });
+    } catch (err) {
+      const error = err as { response?: { data?: { message?: string } }; message: string };
+      throw new Error(error.response?.data?.message ?? error.message);
+    }
+    if (response.data?.error && response.data.error !== 0) {
+      throw new Error(response.data.message || `Zalo API trả về lỗi ${response.data.error} khi lấy thông tin OA`);
+    }
+    const oaId = response.data?.data?.oa_id;
+    if (!oaId) throw new Error('Không lấy được oa_id từ Zalo — kiểm tra lại Access Token');
+    return `https://zalo.me/${oaId}`;
+  }
+
   async validateConfig(channelConfig: Record<string, unknown>): Promise<{ valid: boolean; error?: string }> {
     const config = channelConfig as unknown as ZaloOaChannelConfig;
     if (!config.accessToken) return { valid: false, error: 'accessToken is required' };
     try {
-      await axios.get('https://openapi.zalo.me/v3.0/oa/getoa', {
+      await axios.get('https://openapi.zalo.me/v2.0/oa/getoa', {
         headers: { access_token: config.accessToken },
       });
       return { valid: true };

@@ -49,4 +49,22 @@ export class EncryptionService implements OnModuleInit {
     const str = JSON.stringify(value);
     return str.length <= 8 ? '****' : `${str.slice(0, 2)}****${str.slice(-4)}`;
   }
+
+  /**
+   * For populating the edit form: reveals every field so the user can see
+   * what's actually saved, but replaces the last 4 characters of any field
+   * named in `secretKeys` with asterisks so the full credential never
+   * round-trips to the browser.
+   */
+  maskSecretFields(config: Record<string, unknown>, secretKeys: Set<string>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (secretKeys.has(key) && typeof value === 'string') {
+        result[key] = value.length <= 4 ? '*'.repeat(value.length) : `${value.slice(0, -4)}****`;
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
 }

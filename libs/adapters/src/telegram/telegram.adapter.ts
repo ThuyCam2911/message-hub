@@ -11,6 +11,14 @@ import {
 
 interface TelegramChannelConfig {
   botToken: string;
+  /**
+   * Checked against the `X-Telegram-Bot-Api-Secret-Token` header Telegram
+   * sends on every webhook POST once this value is passed to `setWebhook`.
+   * Optional — without it the inbound opt-in webhook (TelegramWebhookController)
+   * accepts unauthenticated requests, same as this codebase's other
+   * no-signature-scheme channels.
+   */
+  webhookSecret?: string;
 }
 
 /**
@@ -67,6 +75,26 @@ export class TelegramAdapter implements ChannelAdapter {
     return null;
   }
 
+  /**
+   * `payload` is the contact's id — Telegram deep links carry it verbatim as
+   * the `/start` command's argument, so TelegramWebhookController can read
+   * it straight back off the inbound update with no separate lookup table.
+   * Telegram restricts start payloads to [A-Za-z0-9_-] and 64 chars; a UUID
+   * fits both.
+   */
+  async getInviteLink(channelConfig: Record<string, unknown>, payload: string): Promise<string> {
+    const config = channelConfig as unknown as TelegramChannelConfig;
+    const response = await axios.get(`https://api.telegram.org/bot${config.botToken}/getMe`);
+    if (!response.data?.ok) {
+      throw new Error(response.data?.description ?? 'Không lấy được thông tin bot Telegram (kiểm tra lại Bot Token)');
+    }
+    const username = response.data.result?.username;
+    if (!username) {
+      throw new Error('Bot Telegram không có username công khai — không thể tạo invite link');
+    }
+    return `https://t.me/${username}?start=${payload}`;
+  }
+
   async validateConfig(channelConfig: Record<string, unknown>): Promise<{ valid: boolean; error?: string }> {
     const config = channelConfig as unknown as TelegramChannelConfig;
     if (!config.botToken) return { valid: false, error: 'botToken is required' };
@@ -83,6 +111,13 @@ export class TelegramAdapter implements ChannelAdapter {
       type: 'object',
       properties: {
         botToken: { type: 'string', title: 'Bot Token', secret: true },
+        webhookSecret: {
+          type: 'string',
+          title: 'Webhook Secret Token (không bắt buộc)',
+          secret: true,
+          description:
+            'Đặt giá trị này khi gọi setWebhook (tham số secret_token) để xác thực webhook đến — không đặt thì webhook nhận không cần xác thực.',
+        },
       },
       required: ['botToken'],
     };

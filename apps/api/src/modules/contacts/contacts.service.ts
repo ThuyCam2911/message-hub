@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Contact, ContactIdentifier } from '@message-hub/domain';
+import { ChannelType, Contact, ContactIdentifier } from '@message-hub/domain';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { ChannelsService } from '../channels/channels.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { AddIdentifierDto } from './dto/add-identifier.dto';
 
@@ -12,6 +13,7 @@ export class ContactsService {
     @InjectRepository(Contact) private readonly contacts: Repository<Contact>,
     @InjectRepository(ContactIdentifier) private readonly identifiers: Repository<ContactIdentifier>,
     private readonly orgs: OrganizationsService,
+    private readonly channels: ChannelsService,
   ) {}
 
   create(dto: CreateContactDto) {
@@ -52,5 +54,28 @@ export class ContactsService {
         isVerified: false,
       }),
     );
+  }
+
+  /**
+   * Insert-or-update by the (contactId, channelType, identifierKind) unique
+   * constraint — used by opt-in webhooks (e.g. TelegramWebhookController)
+   * capturing a real chat_id/user_id from the provider, which should always
+   * win over anything typed in manually before the contact ever opted in.
+   */
+  async upsertIdentifier(contactId: string, channelType: ChannelType, identifierKind: string, value: string) {
+    const existing = await this.identifiers.findOne({ where: { contactId, channelType, identifierKind } });
+    if (existing) {
+      await this.identifiers.update(existing.id, { value, isVerified: true });
+      return { ...existing, value, isVerified: true };
+    }
+    return this.identifiers.save(
+      this.identifiers.create({ contactId, channelType, identifierKind, value, isVerified: true }),
+    );
+  }
+
+  /** Builds the opt-in link for a contact to click (see ChannelsService.getInviteLink) — the contact's own id is the round-trip payload. */
+  async getInviteLink(contactId: string, channelId: string): Promise<string> {
+    await this.get(contactId);
+    return this.channels.getInviteLink(channelId, contactId);
   }
 }

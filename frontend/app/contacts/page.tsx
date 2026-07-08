@@ -18,7 +18,22 @@ interface Contact {
   identifiers?: Identifier[];
 }
 
+interface ChannelOption {
+  id: string;
+  name: string;
+  channelType: string;
+}
+
 const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email', 'mock'];
+
+// Channels where the recipient has to opt in before you can message them —
+// these implement ChannelAdapter.getInviteLink.
+const INVITE_LINK_CHANNEL_TYPES = new Set(['telegram', 'zbs', 'line']);
+
+// Only Telegram's invite link embeds the contact id itself (?start=<id>) —
+// Zalo/LINE have no confirmed deep-link mechanism for that, so the contact
+// has to be told to send their id as a text message instead.
+const CHANNELS_NEEDING_MANUAL_CODE = new Set(['zbs', 'line']);
 
 interface ImportResult {
   totalRows: number;
@@ -30,6 +45,7 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [expanded, setExpanded] = useState<Record<string, Contact>>({});
   const [error, setError] = useState<string | null>(null);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
 
   const [displayName, setDisplayName] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -40,9 +56,17 @@ export default function ContactsPage() {
   const [idKind, setIdKind] = useState<Record<string, string>>({});
   const [idValue, setIdValue] = useState<Record<string, string>>({});
 
+  const [inviteChannelId, setInviteChannelId] = useState<Record<string, string>>({});
+  const [inviteLink, setInviteLink] = useState<Record<string, string>>({});
+  const [inviteLoading, setInviteLoading] = useState<string | null>(null);
+
+  const inviteCapableChannels = channels.filter((c) => INVITE_LINK_CHANNEL_TYPES.has(c.channelType));
+
   async function load() {
     try {
-      setContacts(await api.get<Contact[]>('/contacts'));
+      const [c, ch] = await Promise.all([api.get<Contact[]>('/contacts'), api.get<ChannelOption[]>('/channels')]);
+      setContacts(c);
+      setChannels(ch);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -107,6 +131,21 @@ export default function ContactsPage() {
       setExpanded({ ...expanded, [contactId]: detail });
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function getInviteLink(contactId: string) {
+    const channelId = inviteChannelId[contactId];
+    if (!channelId) return;
+    setError(null);
+    setInviteLoading(contactId);
+    try {
+      const result = await api.get<{ url: string }>(`/contacts/${contactId}/invite-link/${channelId}`);
+      setInviteLink({ ...inviteLink, [contactId]: result.url });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setInviteLoading(null);
     }
   }
 
@@ -220,6 +259,66 @@ export default function ContactsPage() {
                   Add
                 </button>
               </div>
+
+              {inviteCapableChannels.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '0.65rem 0.75rem',
+                    background: 'var(--bg)',
+                    border: '1px dashed var(--border-strong)',
+                    borderRadius: 8,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-end',
+                    gap: '0.6rem',
+                  }}
+                >
+                  <label style={{ minWidth: 200 }}>
+                    Lấy invite link (Telegram/Zalo/LINE)
+                    <select
+                      value={inviteChannelId[c.id] ?? ''}
+                      onChange={(e) => setInviteChannelId({ ...inviteChannelId, [c.id]: e.target.value })}
+                    >
+                      <option value="">-- chọn channel --</option>
+                      {inviteCapableChannels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => getInviteLink(c.id)}
+                    disabled={!inviteChannelId[c.id] || inviteLoading === c.id}
+                  >
+                    {inviteLoading === c.id ? 'Đang tạo...' : 'Tạo invite link'}
+                  </button>
+                  {inviteLink[c.id] &&
+                    (() => {
+                      const usedChannel = channels.find((ch) => ch.id === inviteChannelId[c.id]);
+                      const needsManualCode = usedChannel && CHANNELS_NEEDING_MANUAL_CODE.has(usedChannel.channelType);
+                      return (
+                        <span className="muted" style={{ fontSize: '0.8rem' }}>
+                          {needsManualCode ? (
+                            <>
+                              Gửi link này cho khách để họ mở chat, sau đó nhờ khách nhắn đúng mã sau vào chat (hệ thống tự
+                              ghi nhận khi nhận được): <code className="gz-code-block">{c.id}</code>
+                              <br />
+                            </>
+                          ) : (
+                            'Gửi link này cho khách, họ bấm Start thì hệ thống tự ghi nhận: '
+                          )}
+                          <a href={inviteLink[c.id]} target="_blank" rel="noreferrer">
+                            {inviteLink[c.id]}
+                          </a>
+                        </span>
+                      );
+                    })()}
+                </div>
+              )}
             </div>
           )}
         </div>

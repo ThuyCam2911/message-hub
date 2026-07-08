@@ -21,3 +21,16 @@ export enum AdvanceOn {
   NO_CONFIRMATION_TIMEOUT = 'no_confirmation_timeout',
   EITHER = 'either',
 }
+
+/**
+ * Only meaningful for channels where the provider must approve template
+ * content before it can be sent (WhatsApp Business, Zalo ZNS). Channels with
+ * no approval concept (SMS/Telegram/Line/email/Zalo OA freeform) go straight
+ * to NOT_REQUIRED.
+ */
+export enum TemplateApprovalStatus {
+  NOT_REQUIRED = 'not_required',
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Channel, ChannelStrategy, ChannelType } from '@message-hub/domain';
 import { EncryptionService } from '@message-hub/shared';
-import { ChannelAdapterRegistry } from '@message-hub/adapters';
+import { ChannelAdapter, ChannelAdapterRegistry } from '@message-hub/adapters';
 import { isForeignKeyViolation } from '../../common/db-errors';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
@@ -149,8 +149,13 @@ export class ChannelsService {
     const strategy = await this.strategies.findOneByOrFail({ id: strategyId });
     const channel = await this.findOrThrow(strategy.channelId);
     const adapter = this.registry.get(strategy.strategyKey);
-    const config = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
-    return adapter.validateConfig(config);
+    const channelConfig = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
+    const strategyConfig = strategy.configEncrypted ? this.encryption.decrypt(strategy.configEncrypted) : {};
+    // Same merge as FailoverEngineService.executeStep — otherwise "Test
+    // connection" validates the channel-level config only and can report
+    // success (or a stale failure) while ignoring a strategy-level override
+    // the user just saved.
+    return adapter.validateConfig({ ...channelConfig, ...strategyConfig });
   }
 
   /** Zalo ZNS keeps its own approved-template registry — fetch it live so users pick a real templateId instead of typing one by hand. */
@@ -159,10 +164,27 @@ export class ChannelsService {
     if (channel.channelType !== ChannelType.ZBS) {
       throw new BadRequestException('Sync template chỉ áp dụng cho channel loại zbs (Zalo)');
     }
-    const adapter = this.registry.get('zbs_phone');
-    if (!adapter.listTemplates) {
-      throw new BadRequestException('Adapter zbs_phone hiện chưa hỗ trợ sync template');
-    }
+    return this.listProviderTemplatesForChannel(channel);
+  }
+
+  /**
+   * Generic version of listZaloTemplates: works for any channel whose
+   * channelType has an adapter implementing `listTemplates` (currently only
+   * zbs_phone, but written so a future SMS/WhatsApp provider with its own
+   * template registry needs zero changes here). Deliberately resolves the
+   * adapter by channelType via the registry rather than requiring the
+   * channel to already have a matching channel_strategy row — the call only
+   * ever needs the channel-level config + the adapter class, both of which
+   * exist independent of whether a strategy has been added to this channel
+   * yet.
+   */
+  async listProviderTemplates(channelId: string): Promise<ZaloTemplateSummary[]> {
+    const channel = await this.findOrThrow(channelId);
+    return this.listProviderTemplatesForChannel(channel);
+  }
+
+  private async listProviderTemplatesForChannel(channel: Channel): Promise<ZaloTemplateSummary[]> {
+    const adapter = this.findAdapterWithCapability(channel.channelType, 'listTemplates');
     if (!channel.configEncrypted) {
       throw new BadRequestException('Channel chưa có access token — hãy cấu hình channel trước khi sync template');
     }
@@ -172,7 +194,7 @@ export class ChannelsService {
         const refreshed = await adapter.refreshCredentials(config);
         if (refreshed) {
           Object.assign(config, refreshed);
-          await this.channels.update(channelId, { configEncrypted: this.encryption.encrypt(config) });
+          await this.channels.update(channel.id, { configEncrypted: this.encryption.encrypt(config) });
         }
       } catch (err) {
         // Non-fatal — fall through with the existing token and let the actual sync call below surface the real error.
@@ -181,9 +203,110 @@ export class ChannelsService {
     try {
       return await adapter.listTemplates(config);
     } catch (err) {
-      // Surface Zalo's actual error (e.g. invalid/expired access token) instead of a generic 500.
-      throw new BadRequestException(`Zalo API lỗi: ${(err as Error).message}`);
+      throw new BadRequestException(`${adapter.strategyKey} API lỗi: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Pushes a newly-authored template to the provider for approval, for
+   * channels whose channelType has an adapter implementing `submitTemplate`
+   * (currently only whatsapp_cloud — Zalo ZNS has no public submission API,
+   * only listProviderTemplates for syncing already-approved ones).
+   */
+  async submitProviderTemplate(
+    channelId: string,
+    template: { name: string; body: Record<string, unknown> | string; variables: string[] },
+  ): Promise<{ providerTemplateId: string; status: string }> {
+    const channel = await this.findOrThrow(channelId);
+    const adapter = this.findAdapterWithCapability(channel.channelType, 'submitTemplate');
+    if (!channel.configEncrypted) {
+      throw new BadRequestException('Channel chưa có cấu hình — hãy thiết lập channel trước khi submit template');
+    }
+    const config = this.encryption.decrypt(channel.configEncrypted);
+    try {
+      return await adapter.submitTemplate(config, template);
+    } catch (err) {
+      throw new BadRequestException(`Submit template thất bại: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Builds the opt-in link a contact needs to click before the channel can
+   * message them (Telegram bots, LINE OAs) — payload round-trips through
+   * the provider's opt-in webhook so the resulting identifier lands on the
+   * right contact. Channels without an opt-in model throw via
+   * findAdapterWithCapability's usual "not supported" error.
+   */
+  async getInviteLink(channelId: string, payload: string): Promise<string> {
+    const channel = await this.findOrThrow(channelId);
+    const adapter = this.findAdapterWithCapability(channel.channelType, 'getInviteLink');
+    if (!channel.configEncrypted) {
+      throw new BadRequestException('Channel chưa có cấu hình — hãy thiết lập channel trước khi tạo invite link');
+    }
+    const config = this.encryption.decrypt(channel.configEncrypted);
+    try {
+      return await adapter.getInviteLink(config, payload);
+    } catch (err) {
+      throw new BadRequestException(`Tạo invite link thất bại: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Resolves an adapter for a capability by channelType, not by an existing
+   * channel_strategy row — sync/submit only need the channel-level config +
+   * the adapter class, so requiring a strategy to already be saved on the
+   * channel would be an artificial precondition the actual call doesn't need.
+   */
+  private findAdapterWithCapability<K extends 'listTemplates' | 'submitTemplate' | 'getInviteLink'>(
+    channelType: ChannelType,
+    capability: K,
+  ): ChannelAdapter & Required<Pick<ChannelAdapter, K>> {
+    for (const adapter of this.registry.list()) {
+      if (adapter.channelType === channelType && adapter[capability]) {
+        return adapter as ChannelAdapter & Required<Pick<ChannelAdapter, K>>;
+      }
+    }
+    throw new BadRequestException(
+      `Không có adapter nào cho channel loại ${channelType} hỗ trợ ${capability} (vd Zalo ZNS không có API submit — chỉ có thể sync template đã duyệt).`,
+    );
+  }
+
+  /**
+   * Full config for the edit form, with secret fields (per the matching
+   * adapters' getConfigSchema) revealed except their last 4 characters —
+   * lets the user see what's already configured without ever round-tripping
+   * a complete credential to the browser.
+   */
+  async getConfigForEdit(id: string): Promise<Record<string, unknown>> {
+    const channel = await this.findOrThrow(id);
+    if (!channel.configEncrypted) return {};
+    const config = this.encryption.decrypt(channel.configEncrypted);
+    const secretKeys = this.secretKeysForChannelType(channel.channelType);
+    return this.encryption.maskSecretFields(config, secretKeys);
+  }
+
+  async getStrategyConfigForEdit(channelId: string, strategyId: string): Promise<Record<string, unknown>> {
+    const strategy = await this.findStrategyOrThrow(channelId, strategyId);
+    if (!strategy.configEncrypted) return {};
+    const config = this.encryption.decrypt(strategy.configEncrypted);
+    const adapter = this.registry.get(strategy.strategyKey);
+    const secretKeys = new Set(
+      Object.entries(adapter.getConfigSchema().properties)
+        .filter(([, prop]) => prop.secret)
+        .map(([key]) => key),
+    );
+    return this.encryption.maskSecretFields(config, secretKeys);
+  }
+
+  private secretKeysForChannelType(channelType: string): Set<string> {
+    const secretKeys = new Set<string>();
+    for (const adapter of this.registry.list()) {
+      if (adapter.channelType !== channelType) continue;
+      for (const [key, prop] of Object.entries(adapter.getConfigSchema().properties)) {
+        if (prop.secret) secretKeys.add(key);
+      }
+    }
+    return secretKeys;
   }
 
   listAvailableAdapters() {

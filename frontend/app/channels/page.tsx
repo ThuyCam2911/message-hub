@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api-client';
 import { hasRole } from '../lib/auth';
+import { CHANNEL_TYPES } from '../lib/channel-types';
 
 interface AdapterConfigProperty {
   type: 'string' | 'number' | 'boolean';
@@ -47,12 +48,6 @@ interface MutationOutcome {
 }
 
 type ConfigValues = Record<string, string | boolean>;
-
-// 'mock' is intentionally left out — it's a fake test-only provider with no
-// real send capability, so it shouldn't be offered when creating new
-// channels (existing mock channels from earlier testing can still be
-// managed/removed via the "Hiện channel test/mock" toggle below).
-const CHANNEL_TYPES = ['zbs', 'sms', 'telegram', 'line', 'whatsapp', 'email'];
 
 const CHANNEL_ICONS: Record<string, string> = {
   zbs: '🎫',
@@ -107,11 +102,18 @@ function ConfigFieldsForm({
   values,
   onChange,
   markRequired = true,
+  isEdit = false,
 }: {
   schema: ConfigSchema;
   values: ConfigValues;
   onChange: (key: string, value: string | boolean) => void;
   markRequired?: boolean;
+  // In edit mode `values` is prefilled with the channel's saved config (the
+  // server masks secret fields to their last 4 chars, see
+  // ChannelsService.getConfigForEdit) — leaving a field untouched still
+  // means "keep the current saved value", the parent only sends keys the
+  // user actually typed into.
+  isEdit?: boolean;
 }) {
   const entries = Object.entries(schema.properties);
   if (entries.length === 0) {
@@ -122,6 +124,7 @@ function ConfigFieldsForm({
       {entries.map(([key, prop]) => {
         const isRequired = markRequired && (schema.required ?? []).includes(key);
         const label = `${prop.title}${isRequired ? ' *' : ''}`;
+        const secretEditHint = isEdit && prop.secret ? 'Giá trị đã lưu (4 ký tự cuối được che) — sửa để đổi' : undefined;
 
         if (prop.type === 'boolean') {
           return (
@@ -133,7 +136,11 @@ function ConfigFieldsForm({
         }
 
         const isMultiline = /template|html|body/i.test(key) || /template|html|body/i.test(prop.title);
-        const inputType = prop.type === 'number' ? 'number' : prop.secret ? 'password' : 'text';
+        // Secret fields stay masked-as-typed (type="password") when creating
+        // a channel, but in edit mode we're deliberately showing the saved
+        // value (last 4 chars starred) as plain text — hiding it behind
+        // password dots on top of that would defeat the point.
+        const inputType = prop.type === 'number' ? 'number' : prop.secret && !isEdit ? 'password' : 'text';
 
         return (
           <label key={key} style={isMultiline ? { gridColumn: '1 / -1' } : undefined}>
@@ -153,6 +160,11 @@ function ConfigFieldsForm({
                 required={isRequired}
                 autoComplete={prop.secret ? 'new-password' : 'off'}
               />
+            )}
+            {secretEditHint && (
+              <span className="muted" style={{ fontSize: '0.76rem', fontWeight: 400 }}>
+                {secretEditHint}
+              </span>
             )}
             {prop.description && (
               <span className="muted" style={{ fontSize: '0.76rem', fontWeight: 400 }}>
@@ -186,10 +198,17 @@ export default function ChannelsPage() {
   const [editName, setEditName] = useState('');
   const [editProvider, setEditProvider] = useState('');
   const [editActive, setEditActive] = useState(true);
+  // editConfigOriginal holds the saved values (secrets pre-masked by the
+  // server) purely for display; editConfigValues holds only what the user
+  // actually typed and is what gets sent on save — keeping them separate
+  // means an untouched field never overwrites the saved value with its own
+  // masked display text.
+  const [editConfigOriginal, setEditConfigOriginal] = useState<ConfigValues>({});
   const [editConfigValues, setEditConfigValues] = useState<ConfigValues>({});
 
   const [editingStrategyRowKey, setEditingStrategyRowKey] = useState<string | null>(null);
   const [editStrategyActive, setEditStrategyActive] = useState(true);
+  const [editStrategyConfigOriginal, setEditStrategyConfigOriginal] = useState<ConfigValues>({});
   const [editStrategyConfigValues, setEditStrategyConfigValues] = useState<ConfigValues>({});
 
   async function load() {
@@ -259,12 +278,19 @@ export default function ChannelsPage() {
     }
   }
 
-  function startEditChannel(c: ChannelView) {
+  async function startEditChannel(c: ChannelView) {
     setEditingChannelId(c.id);
     setEditName(c.name);
     setEditProvider(c.provider);
     setEditActive(c.isActive);
     setEditConfigValues({});
+    setEditConfigOriginal({});
+    try {
+      const original = await api.get<ConfigValues>(`/channels/${c.id}/config`);
+      setEditConfigOriginal(original);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   function cancelEditChannel() {
@@ -320,10 +346,17 @@ export default function ChannelsPage() {
     await load();
   }
 
-  function startEditStrategy(channelId: string, s: StrategyView) {
+  async function startEditStrategy(channelId: string, s: StrategyView) {
     setEditingStrategyRowKey(`${channelId}:${s.id}`);
     setEditStrategyActive(s.isActive);
     setEditStrategyConfigValues({});
+    setEditStrategyConfigOriginal({});
+    try {
+      const original = await api.get<ConfigValues>(`/channels/${channelId}/strategies/${s.id}/config`);
+      setEditStrategyConfigOriginal(original);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   function cancelEditStrategy() {
@@ -534,7 +567,7 @@ export default function ChannelsPage() {
                   </label>
                 </div>
                 <span className="muted" style={{ fontSize: '0.76rem', display: 'block', margin: '0.6rem 0' }}>
-                  Chỉ điền field cấu hình muốn đổi — để trống sẽ giữ nguyên giá trị hiện tại.
+                  Các ô dưới đây đang hiển thị giá trị đã lưu (password/secret key được che 4 ký tự cuối). Chỉ sửa field nào muốn đổi — giữ nguyên sẽ dùng lại giá trị cũ.
                 </span>
                 <div
                   style={{
@@ -558,9 +591,10 @@ export default function ChannelsPage() {
                   )}
                   <ConfigFieldsForm
                     schema={mergeSchemasForChannelType(c.channelType, adapters)}
-                    values={editConfigValues}
+                    values={{ ...editConfigOriginal, ...editConfigValues }}
                     onChange={(key, value) => setEditConfigValues({ ...editConfigValues, [key]: value })}
                     markRequired={false}
+                    isEdit
                   />
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
@@ -655,11 +689,12 @@ export default function ChannelsPage() {
                           {strategyAdapter && Object.keys(strategyAdapter.configSchema.properties).length > 0 && (
                             <ConfigFieldsForm
                               schema={strategyAdapter.configSchema}
-                              values={editStrategyConfigValues}
+                              values={{ ...editStrategyConfigOriginal, ...editStrategyConfigValues }}
                               onChange={(key, value) =>
                                 setEditStrategyConfigValues({ ...editStrategyConfigValues, [key]: value })
                               }
                               markRequired={false}
+                              isEdit
                             />
                           )}
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
