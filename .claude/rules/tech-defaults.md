@@ -5,7 +5,7 @@ Mặc định kỹ thuật đã chốt cho repo này. Khi làm việc mới mà 
 ## Failover policy
 - `advance_on` mặc định phải là `provider_error` cho bất kỳ step nào dùng adapter **không có** webhook xác nhận delivery thật (hiện tại: `zbs_uid`, `zbs_phone`, `telegram_default`, `line_push`, `email_smtp` — xem `.claude/memory.md` mục "advance_on false-failed" để biết vì sao).
 - Chỉ dùng `either` / `no_confirmation_timeout` cho step có adapter thật sự gọi webhook cập nhật status (`sms_http` khi đã cấu hình webhook, `whatsapp_cloud`, `mock_default`).
-- Trước khi tạo policy mới hoặc thêm step mới, kiểm tra `parseWebhook()` của adapter đó có phải stub trả `null` không (`libs/adapters/src/*/*.adapter.ts`).
+- Trước khi tạo policy mới hoặc thêm step mới, kiểm tra `parseWebhook()` của adapter đó có phải stub trả `null` không (`message-hub-backend/libs/adapters/src/*/*.adapter.ts`).
 
 ## Secret / credential
 - Không bao giờ trả plaintext đầy đủ của secret field (password/token) về client.
@@ -16,8 +16,9 @@ Mặc định kỹ thuật đã chốt cho repo này. Khi làm việc mới mà 
 - Pattern `isForeignKeyViolation` + deactivate-fallback dùng nhất quán ở mọi chỗ xoá (channel, strategy, policy, template): thử hard-delete trước, nếu Postgres trả 23503 (FK violation) thì chuyển `isActive = false` thay vì chặn hẳn thao tác xoá.
 
 ## Docker / migration
-- Rebuild từng service riêng khi 1 service build fail giữa lệnh gộp (`docker compose up -d --build api worker frontend`) — nếu 1 service lỗi, các service khác có thể chạy image cũ dù lệnh "thành công". Luôn `docker compose build <service>` rồi `docker compose up -d <service>` tách riêng khi nghi ngờ.
-- Migration: `npm run typeorm -- migration:generate src/migrations/<Name>` chạy từ `apps/api/`. Migration tự áp dụng khi boot (`migrationsRun: true`).
+- Repo tách 2 folder độc lập, mỗi folder tự có `docker-compose.yml` riêng: `message-hub-backend/` (postgres/redis/api/worker) và `message-hub-frontend/` (frontend only) — không còn 1 compose gộp ở root. Chạy `cd message-hub-backend && docker compose up -d` và `cd message-hub-frontend && docker compose up -d` riêng biệt (2 lệnh, 2 thư mục).
+- Rebuild từng service riêng khi 1 service build fail giữa lệnh gộp (`docker compose up -d --build api worker` trong `message-hub-backend/`) — nếu 1 service lỗi, các service khác có thể chạy image cũ dù lệnh "thành công". Luôn `docker compose build <service>` rồi `docker compose up -d <service>` tách riêng khi nghi ngờ.
+- Migration: `npm run typeorm -- migration:generate src/migrations/<Name>` chạy từ `message-hub-backend/apps/api/`. Migration tự áp dụng khi boot (`migrationsRun: true`).
 
 ## Git
 - Tạo commit theo từng nhóm logic riêng biệt thay vì 1 commit khổng lồ khi có nhiều thay đổi không liên quan (vd: responsive UI riêng, doc riêng, feature riêng).

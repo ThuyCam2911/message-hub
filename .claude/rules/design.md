@@ -3,7 +3,7 @@
 Các quyết định kiến trúc mang tính ràng buộc — thay đổi cần cân nhắc kỹ vì nhiều phần code phụ thuộc vào các bất biến này.
 
 ## Adapter pattern là seam duy nhất
-Thêm channel/provider mới = viết 1 class implement `ChannelAdapter` (`libs/adapters/src/channel-adapter.interface.ts`) + đăng ký trong `libs/adapters/src/adapters.module.ts`. **Không đụng core** — `FailoverEngineService` chỉ biết `ChannelAdapterRegistry`, không bao giờ import adapter cụ thể.
+Thêm channel/provider mới = viết 1 class implement `ChannelAdapter` (`message-hub-backend/libs/adapters/src/channel-adapter.interface.ts`) + đăng ký trong `message-hub-backend/libs/adapters/src/adapters.module.ts`. **Không đụng core** — `FailoverEngineService` chỉ biết `ChannelAdapterRegistry`, không bao giờ import adapter cụ thể.
 
 ## `channel_type` ≠ adapter
 1 `channel` (vd "Zalo OA - Marketing") có thể có nhiều `channel_strategies`, mỗi strategy trỏ tới 1 adapter khác nhau nhưng dùng chung credential ở channel-level (vd ZBS UID → ZBS phone). Lý do: cho phép failover trong cùng 1 provider mà không cần tạo channel riêng. Config layer thật sự: `channel.config_encrypted` (base) bị `channel_strategy.config_encrypted` (override) đè lên khi merge — **cả hai adapter.send() và testStrategyConnection() đều phải merge `{...channelConfig, ...strategyConfig}`**, không được chỉ đọc channelConfig (đây từng là 1 bug nghiêm trọng, xem memory.md).

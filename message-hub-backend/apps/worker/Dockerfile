@@ -1,4 +1,4 @@
-# Build context is the repo root (npm workspaces monorepo) — see docker-compose.yml.
+# Build context is message-hub-backend/ (npm workspaces monorepo) — see docker-compose.yml.
 FROM node:20-alpine
 WORKDIR /app
 

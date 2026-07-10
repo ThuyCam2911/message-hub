@@ -1,4 +1,5 @@
-# Build context is the repo root (npm workspaces monorepo) — see docker-compose.yml.
+# Build context is message-hub-frontend/ (standalone Next.js app, no longer
+# part of the backend's npm workspace) — see docker-compose.yml.
 FROM node:20-alpine
 WORKDIR /app
 
@@ -9,7 +10,7 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 COPY . .
 RUN npm ci
-RUN npm run build -w frontend
+RUN npm run build
 
 EXPOSE 3000
-CMD ["npm", "run", "start", "-w", "frontend"]
+CMD ["npm", "run", "start"]

@@ -79,4 +79,34 @@ export class WebhooksController {
     });
     return { received: true, matched };
   }
+
+  /**
+   * Zalo ZNS delivery callback (zbs_phone — ZbsPhoneAdapter). Distinct from
+   * `webhooks/zbs/:channelId` (ZaloWebhookController), which handles zbs_uid
+   * OA opt-in capture — different strategy, different payload shape. No
+   * signature scheme is documented for this callback, so like the other
+   * Zalo route it's treated as unauthenticated. Register
+   * `https://<host>/webhooks/zns/<channelId>` in the ZNS console for each
+   * channel (find the channelId on the Channels page).
+   */
+  @Post('zns/:channelId')
+  async handleZns(
+    @Param('channelId') channelId: string,
+    @Body() body: unknown,
+    @Headers() headers: Record<string, string>,
+  ) {
+    const channel = await this.channels.findOne({ where: { id: channelId, channelType: ChannelType.ZBS } });
+    if (!channel) throw new NotFoundException(`ZBS channel ${channelId} not found`);
+    const channelConfig = channel.configEncrypted ? this.encryption.decrypt(channel.configEncrypted) : {};
+    const { matched } = await this.processing.process({
+      channelType: ChannelType.ZBS,
+      strategyKey: 'zbs_phone',
+      channelId: channel.id,
+      rawPayload: body,
+      headers,
+      channelConfig,
+      signatureValid: true,
+    });
+    return { received: true, matched };
+  }
 }

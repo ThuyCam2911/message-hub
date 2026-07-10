@@ -1,5 +1,5 @@
 {
-  "name": "@message-hub/frontend",
+  "name": "message-hub-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

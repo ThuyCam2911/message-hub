@@ -4,25 +4,31 @@
     {
       "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start:dev", "-w", "apps/api"],
+      "runtimeArgs": ["run", "start:dev", "--prefix", "message-hub-backend", "-w", "apps/api"],
       "port": 3001
     },
     {
       "name": "worker",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start:dev", "-w", "apps/worker"],
+      "runtimeArgs": ["run", "start:dev", "--prefix", "message-hub-backend", "-w", "apps/worker"],
       "port": 3099
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "frontend"],
+      "runtimeArgs": ["run", "dev", "--prefix", "message-hub-frontend"],
       "port": 3000
     },
     {
-      "name": "stack",
+      "name": "backend-stack",
       "runtimeExecutable": "docker",
-      "runtimeArgs": ["compose", "up"],
+      "runtimeArgs": ["compose", "--project-directory", "message-hub-backend", "-f", "message-hub-backend/docker-compose.yml", "up"],
+      "port": 3001
+    },
+    {
+      "name": "frontend-stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "--project-directory", "message-hub-frontend", "-f", "message-hub-frontend/docker-compose.yml", "up"],
       "port": 3000
     }
   ]

@@ -80,10 +80,37 @@ export class ZbsPhoneAdapter implements ChannelAdapter {
     }
   }
 
-  async parseWebhook(): Promise<ParsedWebhookEvent | null> {
-    // ZNS delivery reports require a separate callback URL registration with
-    // Zalo — wire up once a real ZNS account exists (Phase 3).
-    return null;
+  /**
+   * Zalo's ZNS delivery callback ("Sự kiện người dùng nhận thông báo ZNS")
+   * hits a URL you register per-app in the ZNS console — configure it to
+   * `https://<host>/webhooks/zns/<channelId>`. Field names below
+   * (msg_id/tracking_id/error_code, snake_case) mirror the send() request
+   * body and response shape above, which are confirmed against the real
+   * send API — but this callback's exact payload is reconstructed from
+   * third-party integration docs, not a first-party JSON example (Zalo's
+   * own docs are a JS SPA that couldn't be fetched to confirm verbatim), so
+   * **still unverified against a live ZNS account**. Re-check field names
+   * against `rawPayload` in webhook_events the first time a real callback
+   * arrives, and correct here if they differ.
+   */
+  async parseWebhook(rawPayload: unknown): Promise<ParsedWebhookEvent | null> {
+    const payload = rawPayload as {
+      msg_id?: string;
+      tracking_id?: string;
+      error_code?: string | number;
+      error_message?: string;
+    };
+    if (!payload?.msg_id) return null;
+
+    const errorCode = payload.error_code !== undefined ? String(payload.error_code) : undefined;
+    const failed = errorCode !== undefined && errorCode !== '0';
+
+    return {
+      providerMessageId: payload.msg_id,
+      status: failed ? 'failed' : 'delivered',
+      errorCode: failed ? errorCode : undefined,
+      rawPayload,
+    };
   }
 
   async validateConfig(channelConfig: Record<string, unknown>): Promise<{ valid: boolean; error?: string }> {

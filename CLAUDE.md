@@ -2,19 +2,22 @@
 
 Portal trung tâm gửi tin/thông báo đa kênh (Zalo/ZBS, SMS, Telegram, LINE, WhatsApp, Email) với failover engine tự động chuyển kênh khi gửi thất bại.
 
-**Stack**: NestJS (`apps/api`, `apps/worker`) + Next.js 14 App Router (`frontend`) + PostgreSQL + Redis/BullMQ, monorepo npm workspaces. Chạy local qua Docker Compose (`docker compose up -d`).
+**Stack**: NestJS (`message-hub-backend/apps/api`, `message-hub-backend/apps/worker`) + Next.js 14 App Router (`message-hub-frontend`) + PostgreSQL + Redis/BullMQ. 2 folder độc lập ở root, mỗi folder tự chạy Docker Compose riêng (`cd message-hub-backend && docker compose up -d`, `cd message-hub-frontend && docker compose up -d`) — tách để push/deploy lên server độc lập nhau, xem `.claude/rules/tech-defaults.md` mục Docker.
 
 **Cấu trúc chính**:
 ```
-apps/api/src/modules/{channels,templates,contacts,failover-policies,message-requests,campaigns,webhooks,analytics,auth,audit-log,alerts,realtime,organizations}
-apps/worker/src/processors/{dispatch,attempt,timeout-check,webhook-in}.processor.ts
-libs/domain/src/entities        — TypeORM entities
-libs/adapters/src/{zbs,sms,telegram,line,whatsapp,email,mock}  — ChannelAdapter implementations
-libs/failover/src/failover-engine.service.ts  — state machine cốt lõi
-frontend/app/{channels,templates,contacts,failover-policies,campaigns,messages,analytics,audit-log}
+message-hub-backend/
+  apps/api/src/modules/{channels,templates,contacts,failover-policies,message-requests,campaigns,webhooks,analytics,auth,audit-log,alerts,realtime,organizations}
+  apps/worker/src/processors/{dispatch,attempt,timeout-check,webhook-in}.processor.ts
+  libs/domain/src/entities        — TypeORM entities
+  libs/adapters/src/{zbs,sms,telegram,line,whatsapp,email,mock}  — ChannelAdapter implementations
+  libs/failover/src/failover-engine.service.ts  — state machine cốt lõi
+  package.json (npm workspaces: apps/*, libs/*) — không còn gồm frontend
+message-hub-frontend/
+  app/{channels,templates,contacts,failover-policies,campaigns,messages,analytics,audit-log}  — standalone Next.js, không phụ thuộc libs/ backend
 ```
 
-Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 class implement `ChannelAdapter` (`libs/adapters/src/channel-adapter.interface.ts`) + đăng ký trong `libs/adapters/src/adapters.module.ts`. Không đụng core (`FailoverEngineService` chỉ biết registry, không import adapter cụ thể). Quy trình chi tiết: `.claude/skills/add-channel-adapter/SKILL.md`.
+Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 class implement `ChannelAdapter` (`message-hub-backend/libs/adapters/src/channel-adapter.interface.ts`) + đăng ký trong `message-hub-backend/libs/adapters/src/adapters.module.ts`. Không đụng core (`FailoverEngineService` chỉ biết registry, không import adapter cụ thể). Quy trình chi tiết: `.claude/skills/add-channel-adapter/SKILL.md`.
 
 **File cấu hình/kiến thức đi kèm** (đọc trước khi làm việc lớn):
 @.claude/rules/design.md
@@ -61,6 +64,10 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 - Fix bug endpoint Zalo `getoa` dùng nhầm v3.0 (404) thay vì v2.0 — khiến "Test connection" cho `zbs_uid` từng luôn fail.
 - Dựng `.claude/` (rules/, memory.md, agents/, skills/) làm kho kiến thức chung — xem đầu file.
 
+**Webhook delivery-status thật cho Zalo ZNS (session này, 2026-07-09)**:
+- Research xác nhận: Zalo ZNS (`zbs_phone`) có webhook callback delivery thật; Zalo OA (`zbs_uid`) chưa xác nhận được; Telegram/LINE là platform limitation thật, không hỗ trợ.
+- Implement `parseWebhook` cho `zbs_phone` + route `POST /webhooks/zns/:channelId` — chưa verify với callback thật (chưa có tài khoản ZNS live), field name dựng từ docs bên thứ 3.
+
 ---
 
 ## 2. Trạng thái hiện tại của từng phần
@@ -72,7 +79,9 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 | Channels page (CRUD, mask secret) | Hoàn thành, đã verify qua UI thật |
 | Templates page v2 | Hoàn thành, đã commit + push lên `main` |
 | Webhook Zalo/Telegram/LINE — opt-in capture | **Xong** — webhook riêng cho từng kênh (`/webhooks/telegram/:channelId`, `/webhooks/zbs/:channelId`, `/webhooks/line/:channelId`) tự gắn chat_id/uid/user_id vào Contact khi user nhắn trước; UI Contacts có nút tạo invite link |
-| Webhook Zalo/Telegram/LINE — delivery status thật | **Chưa làm** — `parseWebhook()` của 3 adapter này vẫn là stub trả `null` (khác với opt-in capture ở trên, đây là xác nhận đã gửi/đã đọc). Email SMTP thuần vốn không có cơ chế bounce webhook. → mọi step dùng 3 adapter này + email phải để `advance_on = provider_error` (xem `.claude/rules/tech-defaults.md`). |
+| Webhook delivery status — Zalo ZNS (`zbs_phone`) | **Xong (2026-07-09)** — `parseWebhook` thật + route `POST /webhooks/zns/:channelId`, đã verify route map + smoke test. **Chưa verify với callback thật** (chưa có tài khoản ZNS live) — field name dựng từ docs bên thứ 3 vì docs chính chủ Zalo là SPA JS không đọc được. Chi tiết `.claude/memory.md` mục 2026-07-09. |
+| Webhook delivery status — Zalo OA (`zbs_uid`) | **Chưa xác nhận được** platform có hỗ trợ hay không (docs không fetch được) — `parseWebhook` vẫn stub trả `null`, giữ `advance_on = provider_error`. |
+| Webhook delivery status — Telegram/LINE | **Platform không hỗ trợ** (xác nhận qua docs chính thức) — không đầu tư thêm, giữ `advance_on = provider_error` vĩnh viễn. Email SMTP thuần cũng không có cơ chế bounce webhook, tương tự. |
 | WhatsApp submit-template API | Viết theo docs công khai của Meta, **chưa verify với WABA thật** |
 | Code review Templates v2 | Hoàn tất — 10 finding, 8 fix / 2 skip có lý do, đã report qua `ReportFindings` |
 | Docker stack local | Migration mới nhất (`AddTemplateApprovalFields`) đã apply |
@@ -82,8 +91,8 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 
 ## 3. Bước tiếp theo cần làm
 
-1. Khi user có tài khoản provider thật (VietGuys, Zalo OA/ZNS, WhatsApp WABA...): verify lại toàn bộ send flow, đặc biệt WhatsApp `submitTemplate` (chưa test thật) và Zalo token refresh.
-2. Implement webhook delivery-status thật cho Zalo/Telegram/LINE nếu user cần (khác với opt-in capture đã xong — đây là xác nhận đã gửi/đã đọc). Chưa đưa vào scope cho tới khi được yêu cầu rõ.
+1. Khi user có tài khoản provider thật (VietGuys, Zalo OA/ZNS, WhatsApp WABA...): verify lại toàn bộ send flow, đặc biệt WhatsApp `submitTemplate` (chưa test thật), Zalo token refresh, **và re-check field name của ZNS webhook callback** (`ZbsPhoneAdapter.parseWebhook`) đối chiếu `rawPayload` thật lưu trong `webhook_events` — hiện dựng từ docs bên thứ 3, chưa có callback thật để xác nhận.
+2. ~~Implement webhook delivery-status thật cho Zalo/Telegram/LINE~~ — **Xong một phần (2026-07-09)**: ZNS (`zbs_phone`) đã implement (route `/webhooks/zns/:channelId`, chưa verify callback thật). Zalo OA (`zbs_uid`) vẫn chưa xác nhận được platform có hỗ trợ không. Telegram/LINE xác nhận là platform limitation thật — không làm nữa. Chi tiết `.claude/memory.md`.
 3. ~~Audit toàn bộ failover policy đang active theo bug pattern "advance_on sai"~~ — **Xong (2026-07-08)**: tìm thấy 2 policy ("Gmail", "ZBS") vẫn còn bug dù đã "phát hiện" trước đó nhưng chưa thực sự fix trong DB — đã sửa, verify lại toàn bộ 5 policy active đều đúng. Chi tiết: `.claude/memory.md`.
 
 ---
