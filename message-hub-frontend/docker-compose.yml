@@ -7,4 +7,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     ports:
-      - "3000:3000"
+      # Host-side port 3000 isn't in the shared staging server's ufw
+      # allow-list — 7070 is free and allowed. Container-internal port
+      # stays 3000 (next start -p 3000), unaffected.
+      - "7070:3000"
