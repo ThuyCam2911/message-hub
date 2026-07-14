@@ -29,6 +29,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      network: host
     env_file: .env
     environment:
       # Internal docker network hostnames/ports — overrides the host-mode
@@ -50,6 +51,7 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
+      network: host
     env_file: .env
     environment:
       DATABASE_URL: postgres://message_hub:message_hub@postgres:5432/message_hub
