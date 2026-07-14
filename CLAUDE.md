@@ -68,6 +68,22 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 - Research xác nhận: Zalo ZNS (`zbs_phone`) có webhook callback delivery thật; Zalo OA (`zbs_uid`) chưa xác nhận được; Telegram/LINE là platform limitation thật, không hỗ trợ.
 - Implement `parseWebhook` cho `zbs_phone` + route `POST /webhooks/zns/:channelId` — chưa verify với callback thật (chưa có tài khoản ZNS live), field name dựng từ docs bên thứ 3.
 
+**Tracking (view/click) + Campaign Insights dashboard (session này, 2026-07-10)**:
+- Entity `TrackingEvent` (view/click, FK → message_attempts) + `Campaign.campaignType` (voucher/loyalty/reward/other). Endpoint public `GET /t/o/:attemptId` (open-pixel) + `GET /t/c/:attemptId?u=` (click redirect) — IP luôn hash SHA-256, không lưu raw IP.
+- Tự động wrap link + chèn open-pixel (email) trong `FailoverEngineService` khi env `PUBLIC_API_URL` có set — no-op nếu không set.
+- `GET /analytics/campaigns` + `/analytics/campaigns/summary` — sent/delivered/opened/clicked/rate theo campaign, filter theo loại + ngày.
+- Seed demo (`npm run seed:demo` trong `apps/api`) — 18 campaign giả (6 mỗi loại), ~5,165 request/attempt, insert thẳng DB (không qua BullMQ thật).
+- Trang mới `/analytics/campaigns` ("Campaign Insights") — KPI tile, breakdown theo loại, funnel, trend chart, bảng top campaign (dùng `recharts`).
+- Làm qua 2 subagent song song (backend + frontend) — cả 2 tự báo "đã verify xong" nhưng bar chart breakdown thực ra render rỗng (Recharts v3 animation bug, thiếu `isAnimationActive={false}`) — session tự phát hiện qua đọc DOM SVG trực tiếp, đã fix. Chi tiết `.claude/memory.md` mục 2026-07-10.
+
+**Redesign Campaign Insights bằng Shadcn UI + time range/status filter (session này, 2026-07-11)**:
+- Thêm Tailwind v3.4 (`corePlugins.preflight: false` bắt buộc — app khác không dùng Tailwind, `globals.css` chung cho toàn app) + component Shadcn (card/button/badge/table/select/popover/calendar/chart/tabs/skeleton/tooltip/separator).
+- Time range picker (preset 7/30/90 ngày + custom range) — backend đổi `from`/`to` từ lọc theo ngày tạo campaign sang lọc theo **thời điểm gửi thật** (`message_requests.createdAt`) để filter đúng nghĩa.
+- Filter trạng thái campaign (mới, cùng với filter loại đã có) — `byStatus` breakdown mới trong `/analytics/campaigns/summary`.
+- Thêm chart: breakdown theo trạng thái (donut), scatter openRate×clickRate từng campaign, spotlight "xuất sắc nhất"/"cần chú ý", bảng sort được theo cột.
+- Agent tự tìm + fix 3 bug không nằm trong brief: `shadcn add chart` âm thầm hạ version `recharts`, CSS shorthand cũ (`button { background: ... }`) đè xuyên qua mọi component shadcn (chỉ thấy qua soi DOM, không thấy qua screenshot), cache `.next` hỏng khi build lúc dev server đang chạy. Chi tiết `.claude/memory.md` mục 2026-07-11.
+- Session tự verify lại độc lập sau khi agent báo xong (đếm path/rect thật trong SVG, test time range đổi số liệu thật, soi trang Channels/Templates không bị Tailwind phá).
+
 ---
 
 ## 2. Trạng thái hiện tại của từng phần
@@ -84,8 +100,10 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 | Webhook delivery status — Telegram/LINE | **Platform không hỗ trợ** (xác nhận qua docs chính thức) — không đầu tư thêm, giữ `advance_on = provider_error` vĩnh viễn. Email SMTP thuần cũng không có cơ chế bounce webhook, tương tự. |
 | WhatsApp submit-template API | Viết theo docs công khai của Meta, **chưa verify với WABA thật** |
 | Code review Templates v2 | Hoàn tất — 10 finding, 8 fix / 2 skip có lý do, đã report qua `ReportFindings` |
-| Docker stack local | Migration mới nhất (`AddTemplateApprovalFields`) đã apply |
+| Docker stack local | Migration mới nhất (`AddTrackingAndCampaignType`) đã apply |
 | `.claude/` config structure | Xong (session này) — rules/, memory.md, agents/, skills/ |
+| Tracking view/click + Campaign Insights dashboard | **Xong (2026-07-10)** — backend (entity/endpoint/wiring/analytics/seed) + frontend (`/analytics/campaigns`) đã verify qua preview thật với dữ liệu demo thật. Bug Recharts bar-chart-rỗng đã fix. **Chưa test wrap-link/open-pixel với kênh thật** (chỉ verify no-op khi `PUBLIC_API_URL` chưa set + unit test cũ vẫn pass) — cần thử với 1 send thật (vd mock hoặc email) khi có nhu cầu. |
+| Redesign Campaign Insights — Shadcn UI + time range/status filter | **Xong (2026-07-11)** — Tailwind v3 (`preflight: false`) + shadcn component, time range picker lọc theo hoạt động thật, filter status, thêm chart (status donut, scatter, spotlight). Đã verify độc lập (đếm path/rect SVG thật, test filter đổi số liệu thật, xác nhận trang khác không bị Tailwind phá). Chi tiết `.claude/memory.md` mục 2026-07-11. |
 
 ---
 
@@ -94,6 +112,8 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 1. Khi user có tài khoản provider thật (VietGuys, Zalo OA/ZNS, WhatsApp WABA...): verify lại toàn bộ send flow, đặc biệt WhatsApp `submitTemplate` (chưa test thật), Zalo token refresh, **và re-check field name của ZNS webhook callback** (`ZbsPhoneAdapter.parseWebhook`) đối chiếu `rawPayload` thật lưu trong `webhook_events` — hiện dựng từ docs bên thứ 3, chưa có callback thật để xác nhận.
 2. ~~Implement webhook delivery-status thật cho Zalo/Telegram/LINE~~ — **Xong một phần (2026-07-09)**: ZNS (`zbs_phone`) đã implement (route `/webhooks/zns/:channelId`, chưa verify callback thật). Zalo OA (`zbs_uid`) vẫn chưa xác nhận được platform có hỗ trợ không. Telegram/LINE xác nhận là platform limitation thật — không làm nữa. Chi tiết `.claude/memory.md`.
 3. ~~Audit toàn bộ failover policy đang active theo bug pattern "advance_on sai"~~ — **Xong (2026-07-08)**: tìm thấy 2 policy ("Gmail", "ZBS") vẫn còn bug dù đã "phát hiện" trước đó nhưng chưa thực sự fix trong DB — đã sửa, verify lại toàn bộ 5 policy active đều đúng. Chi tiết: `.claude/memory.md`.
+4. ~~Tracking view/click + Campaign Insights dashboard~~ — **Xong (2026-07-10)**. Việc còn lại nếu cần: thử wrap-link/open-pixel với 1 send thật (mock hoặc email) để xác nhận link/pixel thật sự chèn đúng vào nội dung gửi đi, hiện mới verify no-op path + unit test.
+5. ~~Redesign Campaign Insights bằng Shadcn UI~~ — **Xong (2026-07-11)**.
 
 ---
 

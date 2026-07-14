@@ -1,3 +1,51 @@
+/* ---------- Tailwind / shadcn-ui ----------
+   Scoped to shadcn components + the Campaign Insights dashboard only.
+   preflight is disabled in tailwind.config.ts (corePlugins.preflight: false)
+   so `@tailwind base` below contributes nothing — it does NOT reset default
+   element styles app-wide. Verified by screenshot-diffing /channels and
+   /templates before/after this change (see report). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* shadcn/ui theme tokens, mapped to GiftZone brand colors (HSL triplets,
+     no `hsl()` wrapper — consumed as hsl(var(--x)) by tailwind.config.ts).
+     Kept in the same :root as the gz-* brand tokens below so there is a
+     single source of truth; shadcn components read --primary/--chart-*,
+     hand-written pages keep reading --gz-*. */
+  --background: 228 38% 97%; /* --bg */
+  --foreground: 222 18% 11%; /* --text */
+  --card: 0 0% 100%;
+  --card-foreground: 222 18% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 18% 11%;
+  --primary: 153 89% 36%; /* --gz-green */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 228 30% 95%;
+  --secondary-foreground: 222 18% 11%;
+  --muted: 228 30% 95%;
+  --muted-foreground: 221 13% 46%; /* --text-muted */
+  --accent: 25 100% 96%;
+  --accent-foreground: 25 100% 30%;
+  --destructive: 4 74% 49%; /* --danger */
+  --destructive-foreground: 0 0% 100%;
+  --border: 222 22% 91%;
+  --input: 221 19% 84%;
+  --ring: 153 89% 36%; /* --gz-green */
+  --radius: 0.7rem;
+
+  /* Categorical chart palette — chart-1/2/3 are the campaign-type identity
+     colors already validated for the old dashboard (green/blue/orange, see
+     the palette-validator comment further down); chart-4/5 extend it for
+     status/other groupings so byStatus etc. never run out of colors. */
+  --chart-1: 153 89% 36%; /* voucher — gz-green */
+  --chart-2: 222 68% 50%; /* loyalty — blue (3rd categorical hue, brand only has 2 families) */
+  --chart-3: 25 100% 50%; /* reward — gz-orange */
+  --chart-4: 39 100% 50%; /* gz-amber */
+  --chart-5: 221 13% 46%; /* text-muted — "other"/neutral */
+}
+
 :root {
   /* GiftZone brand palette (sampled from official logo assets) */
   --gz-green: #0aad64;
@@ -593,5 +641,360 @@ button.secondary:hover {
   .gz-hero {
     gap: 0.85rem;
     padding: 1.25rem 0 0.75rem;
+  }
+}
+
+/* ---------- Campaign Insights dashboard ---------- */
+
+.gz-ci-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+.gz-ci-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.6rem;
+}
+
+.gz-ci-filter-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.gz-pill {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+}
+
+.gz-pill:hover {
+  background: var(--surface-hover);
+  transform: none;
+  filter: none;
+}
+
+.gz-pill.active {
+  color: #fff;
+  border-color: transparent;
+}
+
+.gz-pill[data-type='all'].active {
+  background: var(--text);
+}
+
+.gz-pill[data-type='voucher'].active {
+  background: var(--gz-green);
+  box-shadow: 0 3px 10px rgba(10, 173, 100, 0.28);
+}
+
+.gz-pill[data-type='loyalty'].active {
+  background: #2a5fd6;
+  box-shadow: 0 3px 10px rgba(42, 95, 214, 0.28);
+}
+
+.gz-pill[data-type='reward'].active {
+  background: var(--gz-orange);
+  box-shadow: 0 3px 10px rgba(255, 105, 0, 0.28);
+}
+
+.gz-ci-fade {
+  transition: opacity 0.2s ease;
+}
+
+.gz-ci-fade.loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.gz-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.9rem;
+  margin-bottom: 1.75rem;
+}
+
+.gz-kpi-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.15rem;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.gz-kpi-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.gz-kpi-label {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.gz-kpi-value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-variant-numeric: proportional-nums;
+}
+
+.gz-chart-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  align-items: stretch;
+}
+
+.gz-chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.2rem 1.3rem 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.gz-chart-card h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+}
+
+.gz-chart-card .gz-chart-subtitle {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-bottom: 0.9rem;
+  display: block;
+}
+
+/* Funnel */
+
+.gz-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 0.35rem 0 0.15rem;
+}
+
+.gz-funnel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.gz-funnel-label {
+  width: 84px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.gz-funnel-track {
+  flex: 1;
+  height: 24px;
+  background: var(--surface-hover);
+  border-radius: 6px;
+  position: relative;
+}
+
+.gz-funnel-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+.gz-funnel-value {
+  width: 108px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: proportional-nums;
+}
+
+.gz-funnel-conv {
+  font-weight: 500;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  margin-left: 0.35rem;
+}
+
+/* Type badges (voucher / loyalty / reward) */
+
+.badge-type-voucher {
+  background: rgba(10, 173, 100, 0.12);
+  color: var(--gz-green-dark);
+}
+
+.badge-type-loyalty {
+  background: rgba(42, 95, 214, 0.12);
+  color: #1d43a3;
+}
+
+.badge-type-reward {
+  background: rgba(255, 105, 0, 0.12);
+  color: #b34e00;
+}
+
+.badge-type-other {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+/* Mini rate meter inside the top-campaigns table */
+
+.gz-rate-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 110px;
+}
+
+.gz-rate-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.gz-rate-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.gz-rate-num {
+  font-size: 0.78rem;
+  font-weight: 700;
+  width: 40px;
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom recharts tooltip */
+
+.gz-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.78rem;
+  min-width: 150px;
+}
+
+.gz-tooltip-title {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+}
+
+.gz-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.12rem 0;
+}
+
+.gz-tooltip-key {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.gz-tooltip-name {
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.gz-tooltip-val {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.gz-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  justify-content: center;
+  padding-top: 0.35rem;
+}
+
+.gz-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gz-legend-key {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.gz-legend-key.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+@media (max-width: 1080px) {
+  .gz-kpi-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .gz-chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .gz-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gz-funnel-label {
+    width: 62px;
+  }
+
+  .gz-funnel-value {
+    width: 84px;
   }
 }

@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import {
   Channel,
   ChannelStrategy,
+  ChannelType,
   ContactIdentifier,
   FailoverPolicyStep,
   MessageAttempt,
@@ -117,6 +118,7 @@ export class FailoverEngineService {
     // overrides have no business ending up there.
     await this.refreshChannelCredentialsIfNeeded(adapter, channel, channelConfig);
     const renderedBody = this.renderer.render(template.body, request.templateVariables);
+    const trackedBody = this.injectTracking(renderedBody, channel.channelType, attempt.id);
 
     // Almost every adapter reads only `channelConfig` (see SendInput),
     // trusting it to already be "the config to use" — so the merge with
@@ -130,7 +132,7 @@ export class FailoverEngineService {
     try {
       result = await adapter.send({
         recipientIdentifier: identifier.value,
-        templateBody: renderedBody,
+        templateBody: trackedBody,
         variables: request.templateVariables,
         channelConfig: mergedConfig,
         strategyConfig,
@@ -174,6 +176,47 @@ export class FailoverEngineService {
       // surface a normal provider_error if the token really is invalid,
       // which the failover chain already knows how to handle.
     }
+  }
+
+  /**
+   * Rewrites plain http(s) links in the rendered body into `/t/c/:attemptId`
+   * redirect links (click tracking) and, for email bodies, appends a hidden
+   * `/t/o/:attemptId` open-pixel — both routes live in TrackingModule. Gated
+   * entirely on `PUBLIC_API_URL`: unset (the default in every existing test
+   * and any deployment that hasn't opted in) means this is a no-op, so
+   * behavior for everyone not using tracking is unchanged.
+   */
+  private injectTracking(
+    body: string | Record<string, unknown>,
+    channelType: ChannelType,
+    attemptId: string,
+  ): string | Record<string, unknown> {
+    const publicApiUrl = process.env.PUBLIC_API_URL;
+    if (!publicApiUrl) return body;
+
+    // Stops at whitespace *and* at `"`/`'`/`<`/`>` — plain \S+ (as a naive
+    // spec would suggest) swallows the closing quote of an HTML
+    // href="https://…" attribute plus everything up to the next space,
+    // corrupting the tag. This still isn't a full HTML parser, but it
+    // correctly handles the one case that actually matters here (email
+    // bodies with <a href="...">) without adding a DOM dependency.
+    const wrapLinks = (text: string): string =>
+      text.replace(
+        /https?:\/\/[^\s"'<>]+/g,
+        (matchedUrl) => `${publicApiUrl}/t/c/${attemptId}?u=${encodeURIComponent(matchedUrl)}`,
+      );
+
+    if (typeof body === 'string') {
+      return wrapLinks(body);
+    }
+
+    if (channelType === ChannelType.EMAIL && typeof body.html === 'string') {
+      const wrappedHtml = wrapLinks(body.html);
+      const pixel = `<img src="${publicApiUrl}/t/o/${attemptId}" width="1" height="1" style="display:none" alt="" />`;
+      return { ...body, html: `${wrappedHtml}${pixel}` };
+    }
+
+    return body;
   }
 
   private async handleSendResult(

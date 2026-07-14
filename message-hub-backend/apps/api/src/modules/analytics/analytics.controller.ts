@@ -1,6 +1,6 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AnalyticsService } from './analytics.service';
+import { AnalyticsService, CampaignAnalyticsFilter } from './analytics.service';
 
 @UseGuards(JwtAuthGuard)
 @Controller('analytics')
@@ -15,5 +15,27 @@ export class AnalyticsController {
   @Get('channel-stats')
   getChannelStats() {
     return this.analytics.getChannelStats();
+  }
+
+  @Get('campaigns')
+  getCampaignAnalytics(
+    @Query('campaignType') campaignType?: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const filter: CampaignAnalyticsFilter = { campaignType, status, from, to };
+    return this.analytics.getCampaignAnalytics(filter);
+  }
+
+  @Get('campaigns/summary')
+  getCampaignAnalyticsSummary(
+    @Query('campaignType') campaignType?: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const filter: CampaignAnalyticsFilter = { campaignType, status, from, to };
+    return this.analytics.getCampaignAnalyticsSummary(filter);
   }
 }

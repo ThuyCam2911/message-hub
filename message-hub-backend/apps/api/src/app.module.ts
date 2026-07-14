@@ -18,6 +18,7 @@ import { AlertsModule } from './modules/alerts/alerts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
     AnalyticsModule,
     AlertsModule,
     CampaignsModule,
+    TrackingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

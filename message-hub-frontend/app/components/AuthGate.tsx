@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { href: '/send-test', label: 'Send Test' },
   { href: '/messages', label: 'Messages' },
   { href: '/analytics', label: 'Analytics' },
+  { href: '/analytics/campaigns', label: 'Campaign Insights' },
 ];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {

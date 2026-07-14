@@ -11,6 +11,14 @@ export enum CampaignStatus {
   COMPLETED = 'completed',
 }
 
+/** Business program the campaign belongs to — drives the analytics dashboard's breakdown view. */
+export enum CampaignType {
+  VOUCHER = 'voucher',
+  LOYALTY = 'loyalty',
+  REWARD = 'reward',
+  OTHER = 'other',
+}
+
 @Entity('campaigns')
 export class Campaign extends BaseEntity {
   @Column({ name: 'organization_id' })
@@ -40,6 +48,10 @@ export class Campaign extends BaseEntity {
 
   @Column({ type: 'enum', enum: CampaignStatus, default: CampaignStatus.DRAFT })
   status!: CampaignStatus;
+
+  @Column({ type: 'enum', enum: CampaignType, name: 'campaign_type', default: CampaignType.OTHER })
+  @Index()
+  campaignType!: CampaignType;
 
   @Column({ name: 'scheduled_at', type: 'timestamptz', nullable: true })
   scheduledAt?: Date;

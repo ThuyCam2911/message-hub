@@ -6,7 +6,8 @@
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "build": "nest build",
-    "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts"
+    "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts",
+    "seed:demo": "ts-node -r tsconfig-paths/register src/scripts/seed-demo-campaigns.ts"
   },
   "dependencies": {
     "@message-hub/adapters": "*",

@@ -14,3 +14,4 @@ export * from './message-attempt.entity';
 export * from './webhook-event.entity';
 export * from './audit-log.entity';
 export * from './alert.entity';
+export * from './tracking-event.entity';
