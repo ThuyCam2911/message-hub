@@ -41,9 +41,10 @@ services:
       API_PORT: 3001
     ports:
       # Host-side port 3001 is already taken by another app on the shared
-      # staging server — 3011 is free and within the ufw allow-list.
-      # Container-internal port stays 3001 (API_PORT above), unaffected.
-      - "3011:3001"
+      # staging server — 4011 is a fresh block the team confirmed is free
+      # and opened at both ufw and the cloud provider's firewall/security
+      # group. Container-internal port stays 3001 (API_PORT above).
+      - "4011:3001"
     depends_on:
       postgres:
         condition: service_healthy

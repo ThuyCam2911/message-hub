@@ -8,6 +8,7 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     ports:
       # Host-side port 3000 isn't in the shared staging server's ufw
-      # allow-list — 7070 is free and allowed. Container-internal port
-      # stays 3000 (next start -p 3000), unaffected.
-      - "7070:3000"
+      # allow-list — 4001 is a fresh block the team confirmed is free and
+      # opened at both ufw and the cloud provider's firewall/security
+      # group. Container-internal port stays 3000 (next start -p 3000).
+      - "4001:3000"
