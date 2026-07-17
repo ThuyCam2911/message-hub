@@ -84,6 +84,17 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 - Agent tự tìm + fix 3 bug không nằm trong brief: `shadcn add chart` âm thầm hạ version `recharts`, CSS shorthand cũ (`button { background: ... }`) đè xuyên qua mọi component shadcn (chỉ thấy qua soi DOM, không thấy qua screenshot), cache `.next` hỏng khi build lúc dev server đang chạy. Chi tiết `.claude/memory.md` mục 2026-07-11.
 - Session tự verify lại độc lập sau khi agent báo xong (đếm path/rect thật trong SVG, test time range đổi số liệu thật, soi trang Channels/Templates không bị Tailwind phá).
 
+**Deploy lần đầu lên server thật — staging chung với các app khác của công ty (session này, 2026-07-14)**:
+- Đăng nhập server qua SSH bằng username/password do tech lead cấp (không dùng SSH key cho việc này), deploy key riêng tạo trên server cho GitHub (không dùng credential cá nhân của user), cài `docker-compose-plugin` + `docker-buildx-plugin` trên server (ban đầu chỉ có Docker Engine trơn).
+- Fix 3 lớp bug hạ tầng liên tiếp, không cái nào liên quan tới code app: (1) npm "Exit handler never called!" khiến `npm ci` báo thành công nhưng cài dở `node_modules` — pin `npm@10.9.2` trong cả 3 Dockerfile; (2) DNS trong container bị chặn hoàn toàn (`EAI_AGAIN`) — hoá ra do `ufw` `deny (routed)` chặn mọi traffic ra ngoài từ container chứ không phải sai DNS server — né bằng `network: host` cho `build:` trong `docker-compose.yml`; (3) port mặc định (3001/3000) trùng/không được phép trên server dùng chung nhiều app công ty — đổi sang dải `40xx` (4011 api / 4001 frontend) theo xác nhận của tech lead.
+- Toàn bộ stack đã chạy đúng trên server (5 container, migration tự áp dụng, CORS đúng, login được) — nghẽn cloud firewall (port 4001/4011) đã được tech lead mở, **truy cập được từ ngoài internet**. Bug pattern kỹ thuật (npm/DNS/ufw) đã ghi vào `.claude/memory.md` mục 2026-07-14 để tái sử dụng khi deploy server khác.
+- **Gắn domain thật (2026-07-17)**: `message-hub.giftzone.vn` (FE) + `message-hub-api.giftzone.vn` (BE), route qua reverse proxy 443 chung của tech lead → vẫn trỏ vào cùng container `4001`/`4011`. Sau khi gắn domain, đăng nhập lỗi vì `NEXT_PUBLIC_API_URL` vẫn còn trỏ IP:port cũ — biến này bake thẳng vào bundle Next.js lúc **build**, đổi `.env` không đủ, phải rebuild lại frontend image mới áp dụng. Đã sửa `NEXT_PUBLIC_API_URL`/`FRONTEND_URL` sang domain https, rebuild, xác nhận login được.
+
+**Dọn UI + gộp module (session này, 2026-07-17)**:
+- Xoá hẳn tab/trang Messages (không còn dùng — kể cả `ws-client.ts`/dependency `socket.io-client` không ai import nữa, đã gỡ khỏi `package.json`).
+- Gộp `/analytics` (channel delivery-rate + alerts) vào `/analytics/campaigns` làm tab thứ 2 ("Channels & Alerts") bằng shadcn `Tabs` — nav chỉ còn 1 mục "Analytics" duy nhất thay vì 2.
+- Phát hiện + fix bug UI thật do user báo (không phải chỉ theo yêu cầu gộp module): nav topbar tràn ngang toàn trang ở độ rộng laptop phổ biến (1024–1360px, kể cả 1280/1366 rất thường gặp) vì `.gz-nav-links` không có `flex-wrap` và breakpoint hamburger cũ (860px) quá thấp so với tổng bề rộng nav thật (~1390px với đủ nav link + Audit Log + user chip + Logout) — đo bằng `scrollWidth` vs `clientWidth` thật, không đoán. Fix: `flex-wrap: wrap` cho nav thay vì đoán lại breakpoint, tự thích ứng nếu sau này thêm/bớt tab. Đồng thời phát hiện `TabsTrigger` (component `Tabs` mới thêm) bị tái phát đúng bug CSS-shorthand-đè-shadcn đã ghi ở 2026-07-11 (thiếu `bg-none`/`shadow-none`) — đã fix. Chi tiết đầy đủ: `.claude/memory.md` mục 2026-07-17.
+
 ---
 
 ## 2. Trạng thái hiện tại của từng phần
@@ -104,6 +115,8 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 | `.claude/` config structure | Xong (session này) — rules/, memory.md, agents/, skills/ |
 | Tracking view/click + Campaign Insights dashboard | **Xong (2026-07-10)** — backend (entity/endpoint/wiring/analytics/seed) + frontend (`/analytics/campaigns`) đã verify qua preview thật với dữ liệu demo thật. Bug Recharts bar-chart-rỗng đã fix. **Chưa test wrap-link/open-pixel với kênh thật** (chỉ verify no-op khi `PUBLIC_API_URL` chưa set + unit test cũ vẫn pass) — cần thử với 1 send thật (vd mock hoặc email) khi có nhu cầu. |
 | Redesign Campaign Insights — Shadcn UI + time range/status filter | **Xong (2026-07-11)** — Tailwind v3 (`preflight: false`) + shadcn component, time range picker lọc theo hoạt động thật, filter status, thêm chart (status donut, scatter, spotlight). Đã verify độc lập (đếm path/rect SVG thật, test filter đổi số liệu thật, xác nhận trang khác không bị Tailwind phá). Chi tiết `.claude/memory.md` mục 2026-07-11. |
+| Deploy staging server (103.245.255.126, dùng chung công ty) | **Xong — truy cập được từ ngoài internet qua domain thật** (`message-hub.giftzone.vn`/`message-hub-api.giftzone.vn`, HTTPS qua reverse proxy chung của tech lead). Chi tiết đầy đủ: `CLAUDE.local.md`. |
+| Nav topbar + module UI | **Xong (2026-07-17)** — bỏ tab Messages, gộp Analytics vào Campaign Insights (2 tab trong 1 trang), fix nav tràn ngang ở laptop width (`flex-wrap`) + fix `TabsTrigger` bị CSS cũ đè. Đã verify qua preview thật ở nhiều breakpoint (mobile/laptop/desktop). Chi tiết `.claude/memory.md` mục 2026-07-17. |
 
 ---
 
@@ -114,6 +127,9 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 3. ~~Audit toàn bộ failover policy đang active theo bug pattern "advance_on sai"~~ — **Xong (2026-07-08)**: tìm thấy 2 policy ("Gmail", "ZBS") vẫn còn bug dù đã "phát hiện" trước đó nhưng chưa thực sự fix trong DB — đã sửa, verify lại toàn bộ 5 policy active đều đúng. Chi tiết: `.claude/memory.md`.
 4. ~~Tracking view/click + Campaign Insights dashboard~~ — **Xong (2026-07-10)**. Việc còn lại nếu cần: thử wrap-link/open-pixel với 1 send thật (mock hoặc email) để xác nhận link/pixel thật sự chèn đúng vào nội dung gửi đi, hiện mới verify no-op path + unit test.
 5. ~~Redesign Campaign Insights bằng Shadcn UI~~ — **Xong (2026-07-11)**.
+6. ~~Deploy staging server — chờ tech lead mở port firewall~~ — **Xong**: tech lead đã mở, server truy cập được từ ngoài internet.
+7. ~~Xin domain + HTTPS thật~~ — **Xong (2026-07-17)**: `message-hub.giftzone.vn` (FE) + `message-hub-api.giftzone.vn` (BE), route qua reverse proxy 443 chung của tech lead.
+8. ~~Xoá module Messages, gộp Analytics vào Campaign Insights~~ — **Xong (2026-07-17)**. Việc còn lại nếu phát sinh nữa: theo dõi xem nav topbar có tràn lại không nếu thêm tab mới trong tương lai (đã có `flex-wrap` phòng ngừa, nhưng chưa test với >8 mục).
 
 ---
 
