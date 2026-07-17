@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api-client';
+import { api } from '../../lib/api-client';
 
 interface Summary {
   totalRequests: number;
@@ -37,7 +37,7 @@ function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
 }
 
-export default function AnalyticsPage() {
+export function ChannelOverviewTab() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [channelStats, setChannelStats] = useState<ChannelStat[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -71,10 +71,9 @@ export default function AnalyticsPage() {
 
   return (
     <div>
-      <h1>Analytics & Alerts</h1>
       {error && <p className="error">{error}</p>}
 
-      <h2>Overview</h2>
+      <h2 style={{ marginTop: 0 }}>Overview</h2>
       {summary && (
         <div className="card" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
           <div>

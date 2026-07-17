@@ -45,6 +45,7 @@ import {
 } from '../../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Button } from '../../components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import {
   ChartContainer,
   ChartLegend,
@@ -54,6 +55,7 @@ import {
   type ChartConfig,
 } from '../../components/ui/chart';
 import { TimeRangePicker, type TimeRange } from './time-range-picker';
+import { ChannelOverviewTab } from './channel-overview-tab';
 import {
   type CampaignRow,
   type CampaignType,
@@ -353,13 +355,21 @@ export default function CampaignInsightsPage() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1>Campaign Insights</h1>
-          <p className="muted" style={{ margin: 0 }}>
-            Hiệu quả chiến dịch đa kênh — voucher, tích điểm &amp; quà tặng
-          </p>
-        </div>
+      <div className="mb-5">
+        <h1>Analytics</h1>
+        <p className="muted" style={{ margin: 0 }}>
+          Hiệu quả chiến dịch &amp; tình trạng gửi tin đa kênh
+        </p>
+      </div>
+
+      <Tabs defaultValue="campaigns">
+        <TabsList className="mb-6">
+          <TabsTrigger value="campaigns">Campaign Insights</TabsTrigger>
+          <TabsTrigger value="channels">Channels &amp; Alerts</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="campaigns">
+      <div className="mb-5 flex flex-wrap items-end justify-end gap-4">
         <TimeRangePicker value={timeRange} onChange={setTimeRange} />
       </div>
 
@@ -752,6 +762,12 @@ export default function CampaignInsightsPage() {
           </Card>
         </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="channels">
+          <ChannelOverviewTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

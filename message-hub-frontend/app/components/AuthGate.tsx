@@ -14,9 +14,7 @@ const NAV_LINKS = [
   { href: '/failover-policies', label: 'Failover Policies' },
   { href: '/campaigns', label: 'Campaigns' },
   { href: '/send-test', label: 'Send Test' },
-  { href: '/messages', label: 'Messages' },
-  { href: '/analytics', label: 'Analytics' },
-  { href: '/analytics/campaigns', label: 'Campaign Insights' },
+  { href: '/analytics/campaigns', label: 'Analytics' },
 ];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {

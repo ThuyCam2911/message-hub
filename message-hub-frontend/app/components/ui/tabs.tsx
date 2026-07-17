@@ -29,7 +29,11 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+      // bg-none/shadow-none: app/globals.css's legacy `button { background:
+      // var(--gz-gradient-orange); box-shadow: ...}` shorthand leaks through
+      // any plain <button> (which is what Radix renders here) — same fix as
+      // components/ui/button.tsx.
+      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-none shadow-none data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
       className
     )}
     {...props}

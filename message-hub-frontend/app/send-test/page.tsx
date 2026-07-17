@@ -65,8 +65,7 @@ export default function SendTestPage() {
       {error && <p className="error">{error}</p>}
       {result && (
         <p className="muted">
-          Đã tạo message request <strong>{result.id}</strong> — xem tiến trình ở trang{' '}
-          <a href="/messages">Messages</a>.
+          Đã tạo message request <strong>{result.id}</strong>.
         </p>
       )}
 

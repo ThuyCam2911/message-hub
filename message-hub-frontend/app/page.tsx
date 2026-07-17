@@ -19,7 +19,6 @@ const QUICK_LINKS = [
   { href: '/failover-policies', title: 'Failover Policies', desc: 'Dựng chuỗi failover tự động' },
   { href: '/campaigns', title: 'Campaigns', desc: 'Gửi hàng loạt, cá nhân hoá theo contact' },
   { href: '/send-test', title: 'Send Test', desc: 'Gửi thử nhanh 1 message' },
-  { href: '/messages', title: 'Messages', desc: 'Theo dõi realtime từng lượt gửi' },
 ];
 
 export default function HomePage() {
