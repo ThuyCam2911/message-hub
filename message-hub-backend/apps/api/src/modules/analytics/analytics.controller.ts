@@ -19,23 +19,25 @@ export class AnalyticsController {
 
   @Get('campaigns')
   getCampaignAnalytics(
+    @Query('campaignId') campaignId?: string,
     @Query('campaignType') campaignType?: string,
     @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const filter: CampaignAnalyticsFilter = { campaignType, status, from, to };
+    const filter: CampaignAnalyticsFilter = { campaignId, campaignType, status, from, to };
     return this.analytics.getCampaignAnalytics(filter);
   }
 
   @Get('campaigns/summary')
   getCampaignAnalyticsSummary(
+    @Query('campaignId') campaignId?: string,
     @Query('campaignType') campaignType?: string,
     @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const filter: CampaignAnalyticsFilter = { campaignType, status, from, to };
+    const filter: CampaignAnalyticsFilter = { campaignId, campaignType, status, from, to };
     return this.analytics.getCampaignAnalyticsSummary(filter);
   }
 }

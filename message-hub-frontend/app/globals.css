@@ -479,6 +479,16 @@ button.secondary:hover {
   color: var(--text-faint);
 }
 
+.badge-draft {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+.badge-completed {
+  background: #ecfdf3;
+  color: var(--gz-green-dark);
+}
+
 /* ---------- Utility ---------- */
 
 .muted {

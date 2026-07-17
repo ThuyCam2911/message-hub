@@ -54,7 +54,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '../../components/ui/chart';
-import { TimeRangePicker, type TimeRange } from './time-range-picker';
+import { TimeRangePicker, type TimeRange } from '../../components/time-range-picker';
 import { ChannelOverviewTab } from './channel-overview-tab';
 import {
   type CampaignRow,

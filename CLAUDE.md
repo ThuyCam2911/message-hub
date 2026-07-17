@@ -95,6 +95,18 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 - Gộp `/analytics` (channel delivery-rate + alerts) vào `/analytics/campaigns` làm tab thứ 2 ("Channels & Alerts") bằng shadcn `Tabs` — nav chỉ còn 1 mục "Analytics" duy nhất thay vì 2.
 - Phát hiện + fix bug UI thật do user báo (không phải chỉ theo yêu cầu gộp module): nav topbar tràn ngang toàn trang ở độ rộng laptop phổ biến (1024–1360px, kể cả 1280/1366 rất thường gặp) vì `.gz-nav-links` không có `flex-wrap` và breakpoint hamburger cũ (860px) quá thấp so với tổng bề rộng nav thật (~1390px với đủ nav link + Audit Log + user chip + Logout) — đo bằng `scrollWidth` vs `clientWidth` thật, không đoán. Fix: `flex-wrap: wrap` cho nav thay vì đoán lại breakpoint, tự thích ứng nếu sau này thêm/bớt tab. Đồng thời phát hiện `TabsTrigger` (component `Tabs` mới thêm) bị tái phát đúng bug CSS-shorthand-đè-shadcn đã ghi ở 2026-07-11 (thiếu `bg-none`/`shadow-none`) — đã fix. Chi tiết đầy đủ: `.claude/memory.md` mục 2026-07-17.
 
+**Send Test gộp vào Campaign — "gửi test trước khi publish" (session này, 2026-07-17)**:
+- User báo Send Test cũ gửi lỗi mà không rõ lý do — root cause: kết quả gửi (delivered/failed + error) xử lý bất đồng bộ, và trang duy nhất hiển thị nó (`/messages`) vừa bị xoá ở mục dọn UI phía trên mà chưa có chỗ thay thế. Bài học: xoá 1 trang phải kiểm tra nó có phải nơi DUY NHẤT hiển thị thông tin gì không.
+- Xoá hẳn trang `/send-test` độc lập. Thêm `POST /campaigns/:id/send-test` (chỉ khi campaign còn draft) — dùng đúng template + failover policy của campaign, nhập số điện thoại, tự resolve xem bước nào trong policy nhận diện qua phone (dựa vào `identifierKind` từng adapter tự khai báo) để tạo/tái sử dụng 1 Contact test tương ứng — không tạo trùng lặp khi test lại cùng số. Cố tình KHÔNG gắn `campaignId` vào message request test để không làm sai lệch progress/analytics thật của campaign.
+- Frontend: card "Gửi test trước khi publish" trên `/campaigns/[id]` (chỉ hiện khi draft) — nhập số điện thoại, gửi xong tự poll trạng thái tới khi xong, hiện rõ status + error code/message nếu fail.
+- Đã verify qua UI thật cả 2 nhánh: gửi test qua policy SMS (fail rõ lý do `SMS_HTTP_ERROR`) và guard khi policy không có bước nào nhận qua phone (báo lỗi tiếng Việt rõ ràng). Chi tiết đầy đủ + bug môi trường dev gặp phải lúc verify (CORS/`NEXT_PUBLIC_API_URL` cũ sót lại từ lúc test server thật): `.claude/memory.md` mục 2026-07-17 (2).
+
+**Redesign Campaigns (list + detail 4-tab) theo mẫu UI hệ thống GiftZone khác (session này, 2026-07-17)**:
+- User tham khảo UI Campaigns/Contacts từ hệ thống GiftZone khác — đã hỏi rõ phạm vi trước khi làm: chỉ Campaigns, chỉ redesign UI/UX (không xây Job scheduling/Duplicate/Data List/Segment).
+- List page: search/status-filter/date-range + status count (Draft/Running/Complete) + bảng có Start/End date (tính từ hoạt động thật, không phải field mới) + Open rate/Click rate.
+- Detail page: 4 tab Overview (KPI + engagement chart, tái dùng nguyên `/analytics/campaigns/summary` có sẵn qua filter `campaignId` mới thêm) / Config (sửa thông tin campaign + audience + trigger + "Gửi test trước khi publish" dời vào đây) / Message (bảng recipient đầy đủ open/click date) / Job (view khác của cùng data, theo hướng state-machine — không phải hàng đợi job mới).
+- Tự phát hiện + fix 1 bug SQL nghiêm trọng qua soi UI thật (không phải qua test): `SUM(CASE...)` trên query có `LEFT JOIN` bị nhân bản (fanout) khiến Delivered > Targeted — đổi thành `COUNT(DISTINCT CASE...)`. Chi tiết đầy đủ: `.claude/memory.md` mục 2026-07-17 (3).
+
 ---
 
 ## 2. Trạng thái hiện tại của từng phần
@@ -117,6 +129,8 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 | Redesign Campaign Insights — Shadcn UI + time range/status filter | **Xong (2026-07-11)** — Tailwind v3 (`preflight: false`) + shadcn component, time range picker lọc theo hoạt động thật, filter status, thêm chart (status donut, scatter, spotlight). Đã verify độc lập (đếm path/rect SVG thật, test filter đổi số liệu thật, xác nhận trang khác không bị Tailwind phá). Chi tiết `.claude/memory.md` mục 2026-07-11. |
 | Deploy staging server (103.245.255.126, dùng chung công ty) | **Xong — truy cập được từ ngoài internet qua domain thật** (`message-hub.giftzone.vn`/`message-hub-api.giftzone.vn`, HTTPS qua reverse proxy chung của tech lead). Chi tiết đầy đủ: `CLAUDE.local.md`. |
 | Nav topbar + module UI | **Xong (2026-07-17)** — bỏ tab Messages, gộp Analytics vào Campaign Insights (2 tab trong 1 trang), fix nav tràn ngang ở laptop width (`flex-wrap`) + fix `TabsTrigger` bị CSS cũ đè. Đã verify qua preview thật ở nhiều breakpoint (mobile/laptop/desktop). Chi tiết `.claude/memory.md` mục 2026-07-17. |
+| Send Test — gộp vào Campaign (gửi test trước khi publish) | **Xong (2026-07-17)** — thay Send Test độc lập bằng `POST /campaigns/:id/send-test` (chỉ khi draft) + UI inline trên trang chi tiết campaign, hiện rõ status/error khi fail. Đã verify qua UI thật cả nhánh thành công và nhánh guard (policy không có bước nhận qua phone). Chi tiết `.claude/memory.md` mục 2026-07-17 (2). |
+| Redesign Campaigns (list + detail 4-tab: Overview/Config/Message/Job) | **Xong (2026-07-17)** — theo mẫu UI hệ thống GiftZone khác, chỉ UI/UX không thêm domain mới. Đã verify qua UI thật: filter/search list, cả 4 tab detail, trigger send + test send vẫn hoạt động sau khi dời vào Config tab. Chi tiết `.claude/memory.md` mục 2026-07-17 (3). |
 
 ---
 
@@ -130,6 +144,8 @@ Adapter pattern là seam duy nhất: thêm channel/provider mới = viết 1 cla
 6. ~~Deploy staging server — chờ tech lead mở port firewall~~ — **Xong**: tech lead đã mở, server truy cập được từ ngoài internet.
 7. ~~Xin domain + HTTPS thật~~ — **Xong (2026-07-17)**: `message-hub.giftzone.vn` (FE) + `message-hub-api.giftzone.vn` (BE), route qua reverse proxy 443 chung của tech lead.
 8. ~~Xoá module Messages, gộp Analytics vào Campaign Insights~~ — **Xong (2026-07-17)**. Việc còn lại nếu phát sinh nữa: theo dõi xem nav topbar có tràn lại không nếu thêm tab mới trong tương lai (đã có `flex-wrap` phòng ngừa, nhưng chưa test với >8 mục).
+9. ~~Send Test gộp vào Campaign (gửi test trước khi publish)~~ — **Xong (2026-07-17)**. Việc còn lại nếu cần: hiện tại lỗi test-send hiển thị nguyên JSON response từ API (giống pattern lỗi ở các trang khác trong app) — nếu muốn UX đẹp hơn thì cần 1 lớp parse lỗi chung cho toàn app, chưa làm vì ngoài phạm vi yêu cầu lần này.
+10. ~~Redesign Campaigns (list + detail 4-tab) theo mẫu UI tham khảo~~ — **Xong (2026-07-17)**. Nếu user muốn làm tiếp Contacts (Data List/Segment) theo đúng tinh thần đã hỏi trước đó — đây sẽ là việc riêng, chưa bắt đầu.
 
 ---
 

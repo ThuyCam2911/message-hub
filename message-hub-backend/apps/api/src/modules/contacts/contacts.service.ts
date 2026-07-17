@@ -73,6 +73,21 @@ export class ContactsService {
     );
   }
 
+  /**
+   * Looks up a contact by one of its identifier values (e.g. a phone number),
+   * scoped to the given channel types — used by campaign test-send so
+   * repeated tests against the same number reuse 1 contact instead of
+   * piling up duplicates in the real contact list.
+   */
+  async findByIdentifierValue(channelTypes: ChannelType[], identifierKind: string, value: string): Promise<Contact | null> {
+    if (channelTypes.length === 0) return null;
+    const identifier = await this.identifiers.findOne({
+      where: channelTypes.map((channelType) => ({ channelType, identifierKind, value })),
+    });
+    if (!identifier) return null;
+    return this.contacts.findOne({ where: { id: identifier.contactId } });
+  }
+
   /** Builds the opt-in link for a contact to click (see ChannelsService.getInviteLink) — the contact's own id is the round-trip payload. */
   async getInviteLink(contactId: string, channelId: string): Promise<string> {
     await this.get(contactId);

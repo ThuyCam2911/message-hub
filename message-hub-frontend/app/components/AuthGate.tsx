@@ -13,7 +13,6 @@ const NAV_LINKS = [
   { href: '/contacts', label: 'Contacts' },
   { href: '/failover-policies', label: 'Failover Policies' },
   { href: '/campaigns', label: 'Campaigns' },
-  { href: '/send-test', label: 'Send Test' },
   { href: '/analytics/campaigns', label: 'Analytics' },
 ];
 

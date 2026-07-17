@@ -25,6 +25,7 @@ export interface AnalyticsSummary {
 }
 
 export interface CampaignAnalyticsFilter {
+  campaignId?: string;
   campaignType?: string;
   status?: string;
   from?: string;
@@ -75,7 +76,7 @@ export interface CampaignAnalyticsSummary {
     openRate: number;
     clickRate: number;
   }[];
-  trend: { date: string; sent: number; opened: number; clicked: number }[];
+  trend: { date: string; sent: number; delivered: number; opened: number; clicked: number }[];
 }
 
 @Injectable()
@@ -92,6 +93,10 @@ export class AnalyticsService {
    */
   private buildCampaignScopeSql(filter: CampaignAnalyticsFilter, params: unknown[]): string {
     const conditions: string[] = [];
+    if (filter.campaignId) {
+      params.push(filter.campaignId);
+      conditions.push(`c.id = $${params.length}`);
+    }
     if (filter.campaignType) {
       params.push(filter.campaignType);
       conditions.push(`c.campaign_type = $${params.length}`);
@@ -345,11 +350,13 @@ export class AnalyticsService {
     const trendScopeSql = this.buildCampaignScopeSql(filter, trendParams);
     const trendActivitySql = this.buildActivityDateSql(filter, trendParams);
     const trendDateBoundSql = filter.from || filter.to ? trendActivitySql : ` AND mr."createdAt" >= now() - interval '60 days'`;
-    const trendRows: { date: string; sent: number; opened: number; clicked: number }[] = await this.dataSource.query(
-      `
+    const trendRows: { date: string; sent: number; delivered: number; opened: number; clicked: number }[] =
+      await this.dataSource.query(
+        `
       SELECT
         to_char(date_trunc('day', mr."createdAt"), 'YYYY-MM-DD') as date,
         COUNT(DISTINCT mr.id)::int as sent,
+        COUNT(DISTINCT CASE WHEN mr.status = 'delivered' THEN mr.id END)::int as delivered,
         COUNT(DISTINCT CASE WHEN te.event_type = 'view' THEN mr.id END)::int as opened,
         COUNT(DISTINCT CASE WHEN te.event_type = 'click' THEN mr.id END)::int as clicked
       FROM message_requests mr
@@ -360,8 +367,8 @@ export class AnalyticsService {
       GROUP BY date_trunc('day', mr."createdAt")
       ORDER BY date_trunc('day', mr."createdAt")
       `,
-      trendParams,
-    );
+        trendParams,
+      );
 
     const totalSent = totalsRow?.sent ?? 0;
     return {
@@ -396,6 +403,7 @@ export class AnalyticsService {
       trend: trendRows.map((r) => ({
         date: r.date,
         sent: r.sent,
+        delivered: r.delivered,
         opened: r.opened,
         clicked: r.clicked,
       })),

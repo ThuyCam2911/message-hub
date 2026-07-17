@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@message-hub/domain';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -9,6 +9,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { TriggerCampaignDto } from './dto/trigger-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
+import { SendCampaignTestDto } from './dto/send-campaign-test.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('campaigns')
@@ -25,8 +26,13 @@ export class CampaignsController {
   }
 
   @Get()
-  list() {
-    return this.campaigns.list();
+  list(
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.campaigns.list({ search, status, from, to });
   }
 
   @Get(':id')
@@ -52,6 +58,14 @@ export class CampaignsController {
   async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     const result = await this.campaigns.remove(id);
     this.auditLog.record(user.id, 'campaign.deleted', 'Campaign', id, {});
+    return result;
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  @Post(':id/send-test')
+  async sendTest(@Param('id') id: string, @Body() dto: SendCampaignTestDto, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.campaigns.sendTest(id, dto);
+    this.auditLog.record(user.id, 'campaign.test_sent', 'Campaign', id, { phone: dto.phone });
     return result;
   }
 
