@@ -6,7 +6,11 @@ services:
       POSTGRES_PASSWORD: message_hub
       POSTGRES_DB: message_hub
     ports:
-      - "5435:5432"
+      # Host-side port is per-server (different shared staging boxes have
+      # different ports already taken by other apps) — override via
+      # POSTGRES_HOST_PORT in this folder's .env, default matches the
+      # original single-server value.
+      - "${POSTGRES_HOST_PORT:-5435}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +22,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # See POSTGRES_HOST_PORT note above — override via REDIS_HOST_PORT.
+      - "${REDIS_HOST_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -40,11 +45,12 @@ services:
       REDIS_PORT: 6379
       API_PORT: 3001
     ports:
-      # Host-side port 3001 is already taken by another app on the shared
-      # staging server — 4011 is a fresh block the team confirmed is free
-      # and opened at both ufw and the cloud provider's firewall/security
-      # group. Container-internal port stays 3001 (API_PORT above).
-      - "4011:3001"
+      # Host-side port is per-server — override via API_HOST_PORT in this
+      # folder's .env. 4011 was the first shared staging server's fresh
+      # block (confirmed free, opened at ufw + cloud firewall); a second
+      # server with different ports already taken sets its own value.
+      # Container-internal port stays 3001 (API_PORT above).
+      - "${API_HOST_PORT:-4011}:3001"
     depends_on:
       postgres:
         condition: service_healthy
